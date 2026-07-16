@@ -1,0 +1,12 @@
+{
+  "name": "echo",
+  "private": true,
+  "packageManager": "pnpm@10.13.1",
+  "scripts": {
+    "dev:web": "pnpm --dir apps/web dev",
+    "build": "pnpm --dir apps/web build",
+    "lint": "pnpm --dir apps/web lint"
+  },
+  "workspaces": ["apps/*", "packages/*"]
+}
+

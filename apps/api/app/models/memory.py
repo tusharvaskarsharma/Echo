@@ -1,0 +1,32 @@
+from datetime import datetime
+from enum import StrEnum
+from pydantic import BaseModel, ConfigDict, Field
+from uuid import UUID
+
+class ConsentLevel(StrEnum):
+    PRIVATE = "private"
+    FAMILY = "family"
+    LEGACY = "legacy"
+
+class MemoryFragment(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID | str
+    session_id: UUID | str
+    subject_id: UUID | str
+    content: str = Field(min_length=1)
+    emotion_tags: list[str] = []
+    topics: list[str] = []
+    people_mentioned: list[str] = []
+    time_period: str | None = None
+    consent_level: ConsentLevel = ConsentLevel.FAMILY
+    confidence_score: float = Field(ge=0, le=1)
+    created_at: datetime | None = None
+
+class MemoryPatch(BaseModel):
+    consent_level: ConsentLevel
+
+class DraftMemoryCreate(BaseModel):
+    content: str
+    emotion: str
+    topic: str
+    people: list[str] = []

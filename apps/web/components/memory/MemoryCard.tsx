@@ -1,0 +1,1 @@
+export const MemoryCard = () => <div>Card</div>

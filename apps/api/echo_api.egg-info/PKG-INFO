@@ -1,0 +1,23 @@
+Metadata-Version: 2.4
+Name: echo-api
+Version: 0.1.0
+Requires-Python: >=3.12
+Requires-Dist: fastapi<1,>=0.115
+Requires-Dist: uvicorn[standard]<1,>=0.30
+Requires-Dist: pydantic-settings<3,>=2.4
+Requires-Dist: asyncpg>=0.29.0
+Requires-Dist: PyJWT>=2.8.0
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: celery>=5.4.0
+Requires-Dist: redis>=5.0.0
+Requires-Dist: openai>=1.14.0
+Requires-Dist: pinecone-client>=3.2.2
+Provides-Extra: live
+Requires-Dist: openai>=1.0; extra == "live"
+Requires-Dist: supabase>=2.0; extra == "live"
+Requires-Dist: pinecone>=5.0; extra == "live"
+Requires-Dist: celery>=5.4; extra == "live"
+Requires-Dist: redis>=5.0; extra == "live"
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: httpx>=0.27; extra == "dev"

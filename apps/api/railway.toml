@@ -1,0 +1,21 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "pip install -e ."
+
+[deploy]
+startCommand = "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+
+[[services]]
+name = "web"
+# Inherits the [build] and [deploy] at the root, starts the API
+
+[[services]]
+name = "worker"
+[services.build]
+builder = "NIXPACKS"
+buildCommand = "pip install -e ."
+[services.deploy]
+startCommand = "celery -A app.workers.celery_app worker -l info"

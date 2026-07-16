@@ -1,0 +1,1 @@
+export const MemoryFlash = () => <div>Flash</div>
