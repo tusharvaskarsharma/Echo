@@ -38,6 +38,7 @@ app/workers/__init__.py
 app/workers/celery_app.py
 app/workers/process_session.py
 app/workers/retrain_persona.py
+app/workers/task_runner.py
 echo_api.egg-info/PKG-INFO
 echo_api.egg-info/SOURCES.txt
 echo_api.egg-info/dependency_links.txt

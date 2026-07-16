@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pinecone import Pinecone, ServerlessSpec
 from app.config import get_settings
 
@@ -10,10 +10,8 @@ class PineconeService:
         self.settings = get_settings()
         # Initialize Pinecone client
         self.pc = Pinecone(api_key=self.settings.pinecone_api_key or "mock_key_for_demo")
-        self.index_name = self.settings.pinecone_index_name
+        self.index_name = self.settings.pinecone_index_name or "echo-production-v1"
         
-        # In a real production setting, checking index existence synchronously here 
-        # is slow, but acceptable for this architecture phase.
         if self.settings.pinecone_api_key:
             self._ensure_index_exists()
             self.index = self.pc.Index(self.index_name)
@@ -26,7 +24,7 @@ class PineconeService:
                 logger.info(f"Creating Pinecone index '{self.index_name}'...")
                 self.pc.create_index(
                     name=self.index_name,
-                    dimension=3072,
+                    dimension=3072, # Using standard OpenAI dimensions for text-embedding-3-large
                     metric="cosine",
                     spec=ServerlessSpec(
                         cloud="aws",
@@ -36,10 +34,12 @@ class PineconeService:
         except Exception as e:
             logger.error(f"Failed to check or create Pinecone index: {e}")
 
-    def upsert_vectors(self, vectors: List[Dict[str, Any]]):
+    def upsert_vectors(self, namespace: str, vectors: List[Dict[str, Any]]):
         """
         Upserts a list of vectors to Pinecone in batches.
-        Expected format: [{'id': 'vec1', 'values': [0.1...], 'metadata': {...}}]
+        Expected vector format: {'id': 'vec1', 'values': [0.1...], 'metadata': {...}}
+        Metadata Schema must include: user_id, session_id, memory_id, source, tags, importance, emotion, embedding_version.
+        Namespace: Uses persona_id for strict isolation.
         """
         if not getattr(self, 'index', None):
             logger.warning("Pinecone index not initialized. Skipping upsert.")
@@ -49,20 +49,21 @@ class PineconeService:
             batch_size = 100
             for i in range(0, len(vectors), batch_size):
                 batch = vectors[i:i + batch_size]
-                self.index.upsert(vectors=batch)
-                logger.info(f"Upserted batch of {len(batch)} vectors to Pinecone.")
+                self.index.upsert(vectors=batch, namespace=namespace)
+                logger.info(f"Upserted batch of {len(batch)} vectors to Pinecone namespace '{namespace}'.")
         except Exception as e:
             logger.error(f"Failed to upsert to Pinecone: {e}")
             raise
 
-    def query(self, vector: list[float], top_k: int = 12, filter: dict = None) -> list[dict]:
-        """Queries Pinecone for similar vectors."""
+    def query(self, namespace: str, vector: list[float], top_k: int = 12, filter: dict = None) -> list[dict]:
+        """Queries Pinecone for similar vectors in a specific namespace."""
         if not getattr(self, 'index', None):
             logger.warning("Pinecone index not initialized. Returning empty query results.")
             return []
             
         try:
             response = self.index.query(
+                namespace=namespace,
                 vector=vector,
                 top_k=top_k,
                 filter=filter,
@@ -73,18 +74,37 @@ class PineconeService:
             logger.error(f"Failed to query Pinecone: {e}")
             raise
 
-    def update_metadata(self, vector_id: str, metadata_updates: dict):
+    def update_metadata(self, namespace: str, vector_id: str, metadata_updates: dict):
         """Updates the metadata of an existing vector in Pinecone."""
         if not getattr(self, 'index', None):
             logger.warning("Pinecone index not initialized. Skipping metadata update.")
             return
 
         try:
+            # Pinecone python client update command does support namespace
             self.index.update(
                 id=vector_id,
-                set_metadata=metadata_updates
+                set_metadata=metadata_updates,
+                namespace=namespace
             )
-            logger.info(f"Updated metadata for vector {vector_id}")
+            logger.info(f"Updated metadata for vector {vector_id} in namespace '{namespace}'")
         except Exception as e:
             logger.error(f"Failed to update Pinecone metadata: {e}")
+            raise
+
+    def delete_vectors(self, namespace: str, ids: Optional[List[str]] = None, delete_all: bool = False):
+        """Deletes specific vectors or all vectors in a namespace."""
+        if not getattr(self, 'index', None):
+            logger.warning("Pinecone index not initialized. Skipping delete.")
+            return
+            
+        try:
+            if delete_all:
+                self.index.delete(delete_all=True, namespace=namespace)
+                logger.info(f"Deleted all vectors in namespace '{namespace}'")
+            elif ids:
+                self.index.delete(ids=ids, namespace=namespace)
+                logger.info(f"Deleted {len(ids)} vectors from namespace '{namespace}'")
+        except Exception as e:
+            logger.error(f"Failed to delete Pinecone vectors: {e}")
             raise

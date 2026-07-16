@@ -1,5 +1,6 @@
 fastapi<1,>=0.115
 uvicorn[standard]<1,>=0.30
+gunicorn>=21.2.0
 pydantic-settings<3,>=2.4
 asyncpg>=0.29.0
 PyJWT>=2.8.0
@@ -8,6 +9,7 @@ celery>=5.4.0
 redis>=5.0.0
 openai>=1.14.0
 pinecone-client>=3.2.2
+python-multipart>=0.0.9
 
 [dev]
 pytest>=8.0
