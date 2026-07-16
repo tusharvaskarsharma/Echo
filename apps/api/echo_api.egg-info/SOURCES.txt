@@ -12,6 +12,7 @@ app/models/__init__.py
 app/models/echo.py
 app/models/finetune.py
 app/models/memory.py
+app/models/schema.py
 app/models/session.py
 app/models/subject.py
 app/routers/__init__.py
@@ -44,4 +45,5 @@ echo_api.egg-info/SOURCES.txt
 echo_api.egg-info/dependency_links.txt
 echo_api.egg-info/requires.txt
 echo_api.egg-info/top_level.txt
+tests/test_connections.py
 tests/test_demo_api.py
