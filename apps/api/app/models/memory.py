@@ -31,3 +31,6 @@ class DraftMemoryCreate(BaseModel):
     emotion: str
     topic: str
     people: list[str] = []
+
+class ConversationMemoryCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=100_000)

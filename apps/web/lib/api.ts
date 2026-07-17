@@ -44,7 +44,15 @@ export const api = {
   },
   
   memories: async (): Promise<Memory[]> => {
-    return request("/memories");
+    const memories = await request("/memories");
+    return memories.map((memory: any, index: number) => ({
+      ...memory,
+      time_period: memory.time_period ?? "",
+      recorded_at: memory.created_at ?? new Date().toISOString(),
+      timestamp_seconds: 0,
+      x: 20 + ((index * 31) % 60),
+      y: 25 + ((index * 47) % 50),
+    }));
   },
   
   patchMemory: async (id: string, consent: ConsentLevel): Promise<Memory> => {
@@ -72,6 +80,13 @@ export const api = {
     return request("/memories/draft", {
       method: "POST",
       body: JSON.stringify({ session_id: sessionId, ...data })
+    });
+  },
+
+  saveConversation: async (content: string): Promise<Memory> => {
+    return request("/memories/conversation", {
+      method: "POST",
+      body: JSON.stringify({ content })
     });
   }
 };

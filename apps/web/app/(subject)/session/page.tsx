@@ -15,7 +15,6 @@ export default function SessionPage() {
 
   const [timer, setTimer] = useState(0);
   const [text, setText] = useState("");
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -52,17 +51,6 @@ export default function SessionPage() {
   const startSession = async () => {
     setSaveError(null);
     setSaved(false);
-    if (!sessionId) {
-      try {
-        const session = await api.createSession();
-        setSessionId(session.id);
-      } catch (sessionError) {
-        // Voice can still begin if persistence is temporarily unavailable. The
-        // save action will keep the transcript on-screen and report the issue.
-        console.error("Unable to create the memory session", sessionError);
-        setSaveError("Voice is ready, but we could not prepare memory storage yet.");
-      }
-    }
     await connect();
   };
 
@@ -72,19 +60,7 @@ export default function SessionPage() {
     setIsSaving(true);
     setSaveError(null);
     try {
-      let currentSessionId = sessionId;
-      if (!currentSessionId) {
-        const session = await api.createSession();
-        currentSessionId = session.id;
-        setSessionId(currentSessionId);
-      }
-      await api.createDraft(currentSessionId, {
-        content,
-        emotion: "reflection",
-        topic: "voice-session",
-        people: [],
-      });
-      await api.finishSession(currentSessionId);
+      await api.saveConversation(content);
       setSaved(true);
       disconnect();
     } catch (saveFailure) {
