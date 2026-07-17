@@ -1,11 +1,17 @@
 import useSWR from 'swr';
 import { API_BASE } from '../lib/api';
+import { createClient } from '../lib/supabase/client';
 
-const fetcher = (url: string) => fetch(url, {
-  headers: {
-    'Authorization': `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('token') || 'demo-token' : 'demo-token'}`
-  }
-}).then(res => res.json());
+const accessToken = async () => {
+  const { data: { session } } = await createClient().auth.getSession();
+  if (!session) throw new Error("You must be signed in.");
+  return session.access_token;
+};
+const fetcher = async (url: string) => {
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${await accessToken()}` } });
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+  return response.json();
+};
 
 export interface Memory {
   id: string;
@@ -37,7 +43,7 @@ export function useMemoryGraph() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('token') || 'demo-token' : 'demo-token'}`
+          'Authorization': `Bearer ${await accessToken()}`
         },
         body: JSON.stringify({ consent_level })
       });

@@ -3,12 +3,15 @@ import React from 'react';
 import useSWR from 'swr';
 import { BrainCircuit, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { API_BASE } from '../../lib/api';
+import { createClient } from '../../lib/supabase/client';
 
-const fetcher = (url: string) => fetch(url, {
-  headers: {
-    'Authorization': `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('token') || 'demo-token' : 'demo-token'}`
-  }
-}).then(res => res.json());
+const fetcher = async (url: string) => {
+  const { data: { session } } = await createClient().auth.getSession();
+  if (!session) throw new Error("You must be signed in.");
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${session.access_token}` } });
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+  return response.json();
+};
 
 export default function FineTuneStatusCard() {
   const { data, error } = useSWR(`${API_BASE}/finetune/status`, fetcher, { refreshInterval: 10000 });

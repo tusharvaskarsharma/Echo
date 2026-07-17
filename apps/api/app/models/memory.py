@@ -26,6 +26,7 @@ class MemoryPatch(BaseModel):
     consent_level: ConsentLevel
 
 class DraftMemoryCreate(BaseModel):
+    session_id: UUID | str
     content: str
     emotion: str
     topic: str

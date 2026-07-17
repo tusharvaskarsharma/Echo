@@ -45,17 +45,32 @@ class DatabaseClient:
         if not os.path.exists(migrations_dir):
             return
             
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS public.schema_migrations (
+                filename TEXT PRIMARY KEY,
+                applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
         sql_files = sorted([f for f in os.listdir(migrations_dir) if f.endswith('.sql')])
         for sql_file in sql_files:
+            already_applied = await conn.fetchval(
+                "SELECT 1 FROM public.schema_migrations WHERE filename = $1", sql_file
+            )
+            if already_applied:
+                continue
             file_path = os.path.join(migrations_dir, sql_file)
             with open(file_path, "r", encoding="utf-8") as f:
                 sql = f.read()
             try:
-                await conn.execute(sql)
+                async with conn.transaction():
+                    await conn.execute(sql)
+                    await conn.execute(
+                        "INSERT INTO public.schema_migrations (filename) VALUES ($1)", sql_file
+                    )
                 logger.info(f"Executed migration: {sql_file}")
             except Exception as e:
                 logger.error(f"Failed to execute migration {sql_file}: {e}")
-                # We don't raise here strictly to prevent breaking startup if a table exists (unless proper tracking is in place)
+                raise
 
     async def disconnect(self):
         if self.pool:

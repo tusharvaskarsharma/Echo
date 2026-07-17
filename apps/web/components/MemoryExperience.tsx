@@ -9,14 +9,14 @@ export function MemoryExperience({ compact = false }: { compact?: boolean }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [error, setError] = useState("");
-  useEffect(() => { Promise.all([api.profile(), api.memories()]).then(([nextProfile, nextMemories]) => { setProfile(nextProfile); setMemories(nextMemories); }).catch(() => setError("Echo's demo API is not running yet. Start FastAPI on port 8000.")); }, []);
+  useEffect(() => { Promise.all([api.profile(), api.memories()]).then(([nextProfile, nextMemories]) => { setProfile(nextProfile); setMemories(nextMemories); }).catch(() => setError("We could not load your private legacy. Please try again.")); }, []);
   const updateConsent = async (id: string, consent: ConsentLevel) => {
     const previous = memories;
     setMemories((items) => items.map((item) => item.id === id ? { ...item, consent_level: consent } : item));
     try { await api.patchMemory(id, consent); } catch { setMemories(previous); setError("The consent change could not be saved."); }
   };
   if (error) return <div className="error-card">{error}</div>;
-  if (!profile) return <div className="loading-card">Opening Eleanor&apos;s constellation…</div>;
+  if (!profile) return <div className="loading-card">Opening your constellation…</div>;
   return <>
     {!compact && (
       <section className="subject-hero">
@@ -41,4 +41,3 @@ export function MemoryExperience({ compact = false }: { compact?: boolean }) {
     <MemoryGraph memories={memories} onConsent={updateConsent} />
   </>;
 }
-

@@ -12,14 +12,6 @@ def verify_jwt_token(token: str) -> dict:
     """
     settings = get_settings()
     
-    if settings.demo_mode:
-        logger.warning("Demo mode active: bypassing JWT verification.")
-        return {
-            "sub": "00000000-0000-0000-0000-000000000000", 
-            "role": "authenticated",
-            "app_metadata": {"role": "subject"}
-        }
-
     if not settings.supabase_jwt_secret:
         raise HTTPException(status_code=500, detail="Supabase JWT secret not configured.")
 
@@ -29,8 +21,12 @@ def verify_jwt_token(token: str) -> dict:
             token,
             settings.supabase_jwt_secret,
             algorithms=["HS256"],
-            options={"verify_aud": False} # Supabase aud can vary, usually 'authenticated'
+            audience="authenticated",
+            issuer=f"{settings.supabase_url.rstrip('/')}/auth/v1" if settings.supabase_url else None,
+            options={"verify_aud": True, "verify_iss": bool(settings.supabase_url)},
         )
+        if not payload.get("sub"):
+            raise jwt.InvalidTokenError("JWT has no subject")
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")

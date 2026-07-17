@@ -9,12 +9,10 @@ class PineconeService:
     def __init__(self):
         self.settings = get_settings()
         # Initialize Pinecone client
-        self.pc = Pinecone(api_key=self.settings.pinecone_api_key or "mock_key_for_demo")
-        self.index_name = self.settings.pinecone_index_name or "echo-production-v1"
-        
-        if self.settings.pinecone_api_key:
-            self._ensure_index_exists()
-            self.index = self.pc.Index(self.index_name)
+        self.pc = Pinecone(api_key=self.settings.pinecone_api_key)
+        self.index_name = self.settings.pinecone_index
+        self._ensure_index_exists()
+        self.index = self.pc.Index(self.index_name)
 
     def _ensure_index_exists(self):
         """Creates the index if it doesn't exist."""
@@ -31,8 +29,9 @@ class PineconeService:
                         region=self.settings.pinecone_environment
                     )
                 )
-        except Exception as e:
-            logger.error(f"Failed to check or create Pinecone index: {e}")
+        except Exception:
+            logger.exception("Failed to check or create Pinecone index")
+            raise
 
     def upsert_vectors(self, namespace: str, vectors: List[Dict[str, Any]]):
         """
@@ -41,10 +40,6 @@ class PineconeService:
         Metadata Schema must include: user_id, session_id, memory_id, source, tags, importance, emotion, embedding_version.
         Namespace: Uses persona_id for strict isolation.
         """
-        if not getattr(self, 'index', None):
-            logger.warning("Pinecone index not initialized. Skipping upsert.")
-            return
-
         try:
             batch_size = 100
             for i in range(0, len(vectors), batch_size):
@@ -57,10 +52,6 @@ class PineconeService:
 
     def query(self, namespace: str, vector: list[float], top_k: int = 12, filter: dict = None) -> list[dict]:
         """Queries Pinecone for similar vectors in a specific namespace."""
-        if not getattr(self, 'index', None):
-            logger.warning("Pinecone index not initialized. Returning empty query results.")
-            return []
-            
         try:
             response = self.index.query(
                 namespace=namespace,
@@ -76,10 +67,6 @@ class PineconeService:
 
     def update_metadata(self, namespace: str, vector_id: str, metadata_updates: dict):
         """Updates the metadata of an existing vector in Pinecone."""
-        if not getattr(self, 'index', None):
-            logger.warning("Pinecone index not initialized. Skipping metadata update.")
-            return
-
         try:
             # Pinecone python client update command does support namespace
             self.index.update(
@@ -94,10 +81,6 @@ class PineconeService:
 
     def delete_vectors(self, namespace: str, ids: Optional[List[str]] = None, delete_all: bool = False):
         """Deletes specific vectors or all vectors in a namespace."""
-        if not getattr(self, 'index', None):
-            logger.warning("Pinecone index not initialized. Skipping delete.")
-            return
-            
         try:
             if delete_all:
                 self.index.delete(delete_all=True, namespace=namespace)

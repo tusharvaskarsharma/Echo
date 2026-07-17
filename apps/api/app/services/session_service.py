@@ -10,11 +10,17 @@ from app.workers.task_runner import run_task
 logger = logging.getLogger(__name__)
 
 class SessionService:
-    def __init__(self, conn: asyncpg.Connection, subject_id: str | UUID):
+    def __init__(self, conn: asyncpg.Connection, subject_id: str | UUID, email: str | None = None):
         self.conn = conn
         self.subject_id = str(subject_id)
+        self.email = email or f"{subject_id}@account.local"
+
+    async def _ensure_subject(self) -> None:
+        # Each account gets a private default subject for the existing interview flow.
+        await self.conn.execute("INSERT INTO subjects (id, user_id, full_name, email, date_of_birth) VALUES ($1, $1, $2, $3, NULL) ON CONFLICT (id) DO UPDATE SET user_id = EXCLUDED.user_id", self.subject_id, "My Legacy", self.email)
 
     async def create_session(self, req: SessionCreate) -> Session:
+        await self._ensure_subject()
         now = datetime.now(timezone.utc)
         session = Session(
             id=str(uuid4()),
@@ -24,11 +30,11 @@ class SessionService:
             ended_at=None,
             created_at=now
         )
-        return await repositories.create_session(self.conn, session)
+        return await repositories.create_session(self.conn, session, self.subject_id)
 
     async def get_session(self, session_id: str) -> Session:
-        session = await repositories.get_session(self.conn, session_id)
-        if not session or str(session.subject_id) != self.subject_id:
+        session = await repositories.get_session(self.conn, session_id, self.subject_id)
+        if not session:
             raise HTTPException(status_code=404, detail="Session not found")
         return session
 
@@ -47,7 +53,7 @@ class SessionService:
         trigger_worker = (req.status == SessionStatus.COMPLETED and session.status != SessionStatus.COMPLETED)
             
         session.status = req.status
-        updated_session = await repositories.update_session(self.conn, session)
+        updated_session = await repositories.update_session(self.conn, session, self.subject_id)
         
         if trigger_worker:
             try:
@@ -61,6 +67,6 @@ class SessionService:
 
     async def delete_session(self, session_id: str) -> None:
         await self.get_session(session_id) # Validates ownership and existence
-        success = await repositories.delete_session(self.conn, session_id)
+        success = await repositories.delete_session(self.conn, session_id, self.subject_id)
         if not success:
             raise HTTPException(status_code=500, detail="Failed to delete session")

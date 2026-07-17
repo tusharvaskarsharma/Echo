@@ -1,5 +1,3 @@
-import { AppNav } from "../../../components/AppNav";
-import { SessionSimulator } from "../../../components/SessionSimulator";
+import { redirect } from "next/navigation";
 
-export default function SessionPage() { return <main><AppNav /><SessionSimulator /></main>; }
-
+export default function SessionPage() { redirect("/session"); }

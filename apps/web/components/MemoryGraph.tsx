@@ -34,7 +34,7 @@ export function MemoryGraph({ memories, onConsent }: { memories: Memory[]; onCon
 
   return (
     <section className="graph-layout">
-      <div className="graph-canvas" aria-label="Eleanor's memory constellation">
+      <div className="graph-canvas" aria-label="Your memory constellation">
         <div className="graph-halo halo-one" /><div className="graph-halo halo-two" />
         <svg viewBox="0 0 540 345" role="img">
           {links.map(({ from, to }) => <line key={`${from.id}-${to.id}`} className="graph-link" x1={from.cx} y1={from.cy} x2={to.cx} y2={to.cy} />)}
@@ -58,10 +58,9 @@ export function MemoryGraph({ memories, onConsent }: { memories: Memory[]; onCon
           </div>
           <p className="small-note">Private memories are immediately removed from family retrieval.</p>
         </> : <>
-          <p className="eyebrow">Memory constellation</p><h2>Choose a star</h2><p>Each star is a story Eleanor shared. Size reflects confidence; colour reflects emotion.</p>
+          <p className="eyebrow">Memory constellation</p><h2>Choose a star</h2><p>Each star is a story you shared. Size reflects confidence; colour reflects emotion.</p>
         </>}
       </aside>
     </section>
   );
 }
-

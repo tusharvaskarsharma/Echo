@@ -11,8 +11,7 @@ class TranscriptionService:
 
     async def download_audio(self, audio_url: str) -> str:
         """Downloads audio from a URL to a temporary file and returns the path."""
-        if not audio_url or audio_url == "mock_url":
-            # For demonstration purposes, if there is no audio URL, we might throw an error or handle it.
+        if not audio_url:
             raise ValueError("No valid audio URL provided for transcription.")
             
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".m4a")

@@ -16,8 +16,6 @@ class RealtimeService:
         The token is bound to a specific configuration (VAD, voice, functions).
         """
         if not self.settings.openai_api_key:
-            if self.settings.demo_mode:
-                return {"client_secret": "demo_token_12345", "expires_at": 1999999999}
             raise HTTPException(status_code=500, detail="OpenAI API key not configured")
 
         # The Realtime WebRTC API now creates browser credentials at

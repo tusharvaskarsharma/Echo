@@ -134,7 +134,7 @@ Redis handles session state and job queuing. All infrastructure is containerized
 | Voice Synthesis | OpenAI TTS v2 (`tts-1-hd`) | Used with a fixed voice preset matched to the subject's gender/age during family playback. Paired with the fine-tuned persona model, this produces responses that sound stylistically consistent with the subject. True voice cloning is intentionally deferred for ethical reasons. |
 | Memory Extraction | Whisper API + GPT-4o structured outputs | Post-session, Whisper transcribes raw audio to text. GPT-4o with JSON Schema structured outputs then extracts memory fragments, emotion tags, person references, timestamps, and confidence scores from the transcript. |
 | Embeddings | OpenAI `text-embedding-3-large` | 3072-dimension embeddings provide the highest retrieval precision for nuanced semantic matching. Critical when a family member asks "Did she ever talk about regrets?" — the embedding must surface indirectly-related memories. |
-| Auth | Supabase Auth (magic link + OTP) | Passwordless auth reduces friction for elderly subjects. OTP via SMS serves family members without email access. JWT tokens flow through both Supabase RLS and FastAPI middleware seamlessly. |
+| Auth | Supabase Auth (email/password + Google/GitHub OAuth) | Verified-email signup, password reset, OAuth callback exchange, browser-session refresh, and FastAPI JWT validation. JWTs flow through Supabase RLS and FastAPI middleware. |
 | Deployment | Railway (backend + workers) + Vercel (frontend) | Railway supports persistent WebSocket connections and Celery workers without container orchestration overhead. Vercel's Edge Network provides optimal latency for the Next.js frontend. Both support one-command deploys from GitHub — critical for hackathon iteration speed. |
 | Observability | Langfuse | Langfuse traces every LLM call with input/output logging, latency, cost tracking, and session-level grouping. Essential for debugging prompt failures during a live hackathon demo under pressure. |
 
@@ -292,7 +292,7 @@ Row-Level Security policies are the technical backbone of consent. The `memories
 
 **Step 1 — Subject Authentication & Session Initialization**
 
-Subject visits the web app and authenticates via magic link (email) or SMS OTP. On session start, the Next.js frontend calls `POST /api/session/token` which server-side mints an ephemeral OpenAI Realtime API token (`POST https://api.openai.com/v1/realtime/sessions`) with a 60-minute TTL. This token is returned to the client — the OpenAI API key never leaves the server.
+Subject visits the web app and authenticates with a verified email/password account or a configured Google/GitHub OAuth provider. On session start, the Next.js frontend calls `POST /api/session/token`, which server-side mints an ephemeral OpenAI Realtime client secret (`POST https://api.openai.com/v1/realtime/client_secrets`). This token is returned to the client — the OpenAI API key never leaves the server.
 
 FastAPI simultaneously creates a session record in PostgreSQL: `INSERT INTO sessions (subject_id, started_at, status='active', interview_phase) VALUES (...)`. The session ID is returned and stored in React state.
 
@@ -605,4 +605,5 @@ The Next.js 14 frontend is pre-configured for Vercel deployment.
 2. Select the `apps/web` directory as the Root Directory, or let Vercel auto-detect the monorepo structure using `vercel.json`.
 3. Configure the following environment variable in Vercel:
    - `NEXT_PUBLIC_API_BASE_URL` (Set to your Railway backend URL, e.g., `https://echo-api.up.railway.app`)
+   - `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (the public Supabase browser configuration)
 4. Vercel will automatically build and deploy using `pnpm`.

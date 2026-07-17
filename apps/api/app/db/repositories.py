@@ -25,60 +25,66 @@ async def get_subject(conn: asyncpg.Connection, subject_id: UUID | str) -> Optio
     row = await conn.fetchrow(query, subject_id)
     return Subject(**dict(row)) if row else None
 
-async def create_session(conn: asyncpg.Connection, session: Session) -> Session:
+async def create_session(conn: asyncpg.Connection, session: Session, user_id: UUID | str) -> Session:
     query = """
-    INSERT INTO sessions (id, subject_id, status, started_at, ended_at)
-    VALUES ($1, $2, $3, $4, $5)
+    INSERT INTO sessions (id, subject_id, user_id, status, started_at, ended_at)
+    VALUES ($1, $2, $3, $4, $5, $6)
     RETURNING id, subject_id, status, started_at, ended_at, created_at
     """
     row = await conn.fetchrow(
-        query, session.id, session.subject_id, session.status, session.started_at, session.ended_at
+        query, session.id, session.subject_id, user_id, session.status, session.started_at, session.ended_at
     )
     return Session(**dict(row))
 
-async def get_session(conn: asyncpg.Connection, session_id: UUID | str) -> Optional[Session]:
-    query = "SELECT * FROM sessions WHERE id = $1"
-    row = await conn.fetchrow(query, session_id)
+async def get_session(conn: asyncpg.Connection, session_id: UUID | str, user_id: UUID | str | None = None) -> Optional[Session]:
+    """Fetch an owned session; worker code may omit ownership after a trusted job is queued."""
+    if user_id is None:
+        row = await conn.fetchrow("SELECT * FROM sessions WHERE id = $1", session_id)
+    else:
+        row = await conn.fetchrow("SELECT * FROM sessions WHERE id = $1 AND user_id = $2", session_id, user_id)
     return Session(**dict(row)) if row else None
 
-async def list_sessions(conn: asyncpg.Connection, subject_id: UUID | str, limit: int = 10, offset: int = 0) -> tuple[list[Session], int]:
-    count_query = "SELECT COUNT(*) FROM sessions WHERE subject_id = $1"
-    total = await conn.fetchval(count_query, subject_id)
+async def list_sessions(conn: asyncpg.Connection, user_id: UUID | str, limit: int = 10, offset: int = 0) -> tuple[list[Session], int]:
+    total = await conn.fetchval("SELECT COUNT(*) FROM sessions WHERE user_id = $1", user_id)
     
     query = """
-    SELECT * FROM sessions WHERE subject_id = $1
+    SELECT * FROM sessions WHERE user_id = $1
     ORDER BY created_at DESC
     LIMIT $2 OFFSET $3
     """
-    rows = await conn.fetch(query, subject_id, limit, offset)
+    rows = await conn.fetch(query, user_id, limit, offset)
     items = [Session(**dict(row)) for row in rows]
     return items, total
 
-async def update_session(conn: asyncpg.Connection, session: Session) -> Session:
+async def update_session(conn: asyncpg.Connection, session: Session, user_id: UUID | str) -> Session:
     query = """
     UPDATE sessions SET status = $1, ended_at = $2
-    WHERE id = $3
+    WHERE id = $3 AND user_id = $4
     RETURNING *
     """
-    row = await conn.fetchrow(query, session.status, session.ended_at, session.id)
+    row = await conn.fetchrow(query, session.status, session.ended_at, session.id, user_id)
     return Session(**dict(row)) if row else session
 
-async def delete_session(conn: asyncpg.Connection, session_id: UUID | str) -> bool:
-    query = "DELETE FROM sessions WHERE id = $1"
-    result = await conn.execute(query, session_id)
+async def delete_session(conn: asyncpg.Connection, session_id: UUID | str, user_id: UUID | str) -> bool:
+    result = await conn.execute("DELETE FROM sessions WHERE id = $1 AND user_id = $2", session_id, user_id)
     return result == "DELETE 1"
 
 
-async def create_memory(conn: asyncpg.Connection, memory: MemoryFragment) -> MemoryFragment:
+async def create_memory(conn: asyncpg.Connection, memory: MemoryFragment, user_id: UUID | str | None = None) -> MemoryFragment:
+    # Processing workers receive only a session id. Derive its owner server-side
+    # rather than accepting an untrusted owner field from a job payload.
+    owner_id = user_id or await conn.fetchval("SELECT user_id FROM sessions WHERE id = $1", memory.session_id)
+    if not owner_id:
+        raise ValueError("Cannot create a memory without an owning user")
     query = """
-    INSERT INTO memories (id, session_id, subject_id, content, emotion_tags, topics, people_mentioned, consent_level, confidence_score)
-    VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9)
+    INSERT INTO memories (id, session_id, subject_id, user_id, content, emotion_tags, topics, people_mentioned, consent_level, confidence_score)
+    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10)
     RETURNING *
     """
     row = await conn.fetchrow(
         query, 
-        memory.id, memory.session_id, memory.subject_id, memory.content, 
-        json.dumps(memory.emotion_tags), json.dumps(memory.topics), 
+        memory.id, memory.session_id, memory.subject_id, owner_id, memory.content,
+        json.dumps(memory.emotion_tags), json.dumps(memory.topics),
         json.dumps(memory.people_mentioned), memory.consent_level, memory.confidence_score
     )
     if row:
@@ -90,9 +96,8 @@ async def create_memory(conn: asyncpg.Connection, memory: MemoryFragment) -> Mem
         return MemoryFragment(**row_dict)
     return None
 
-async def get_memory(conn: asyncpg.Connection, memory_id: UUID | str) -> Optional[MemoryFragment]:
-    query = "SELECT * FROM memories WHERE id = $1"
-    row = await conn.fetchrow(query, memory_id)
+async def get_memory(conn: asyncpg.Connection, memory_id: UUID | str, user_id: UUID | str) -> Optional[MemoryFragment]:
+    row = await conn.fetchrow("SELECT * FROM memories WHERE id = $1 AND user_id = $2", memory_id, user_id)
     if row:
         row_dict = dict(row)
         row_dict['emotion_tags'] = json.loads(row_dict['emotion_tags']) if isinstance(row_dict['emotion_tags'], str) else row_dict['emotion_tags']
@@ -118,9 +123,8 @@ async def create_conversation_history(conn: asyncpg.Connection, history: Convers
         return ConversationHistory(**row_dict)
     return None
 
-async def list_memories(conn: asyncpg.Connection, subject_id: UUID | str) -> List[MemoryFragment]:
-    query = "SELECT * FROM memories WHERE subject_id = $1 ORDER BY created_at DESC"
-    rows = await conn.fetch(query, subject_id)
+async def list_memories(conn: asyncpg.Connection, user_id: UUID | str) -> List[MemoryFragment]:
+    rows = await conn.fetch("SELECT * FROM memories WHERE user_id = $1 ORDER BY created_at DESC", user_id)
     memories = []
     for row in rows:
         row_dict = dict(row)
@@ -130,7 +134,7 @@ async def list_memories(conn: asyncpg.Connection, subject_id: UUID | str) -> Lis
         memories.append(MemoryFragment(**row_dict))
     return memories
 
-async def update_memory(conn: asyncpg.Connection, memory_id: UUID | str, updates: dict) -> Optional[MemoryFragment]:
+async def update_memory(conn: asyncpg.Connection, memory_id: UUID | str, user_id: UUID | str, updates: dict) -> Optional[MemoryFragment]:
     set_clauses = []
     values = []
     for i, (k, v) in enumerate(updates.items()):
@@ -138,10 +142,11 @@ async def update_memory(conn: asyncpg.Connection, memory_id: UUID | str, updates
         values.append(v)
     
     if not set_clauses:
-        return await get_memory(conn, memory_id)
+        return await get_memory(conn, memory_id, user_id)
         
-    query = f"UPDATE memories SET {', '.join(set_clauses)} WHERE id = ${len(values)+1} RETURNING *"
+    query = f"UPDATE memories SET {', '.join(set_clauses)} WHERE id = ${len(values)+1} AND user_id = ${len(values)+2} RETURNING *"
     values.append(memory_id)
+    values.append(user_id)
     
     row = await conn.fetchrow(query, *values)
     if row:
@@ -153,12 +158,15 @@ async def update_memory(conn: asyncpg.Connection, memory_id: UUID | str, updates
     return None
 
 async def create_finetune_job(conn: asyncpg.Connection, job: FinetuneJob) -> FinetuneJob:
+    user_id = await conn.fetchval("SELECT user_id FROM subjects WHERE id = $1", job.subject_id)
+    if not user_id:
+        raise ValueError("Cannot create a fine-tuning job without an owning user")
     query = """
-    INSERT INTO finetune_jobs (id, subject_id, openai_job_id, openai_file_id, status)
-    VALUES ($1, $2, $3, $4, $5)
+    INSERT INTO finetune_jobs (id, subject_id, user_id, openai_job_id, openai_file_id, status)
+    VALUES ($1, $2, $3, $4, $5, $6)
     RETURNING *
     """
-    row = await conn.fetchrow(query, job.id, job.subject_id, job.openai_job_id, job.openai_file_id, job.status)
+    row = await conn.fetchrow(query, job.id, job.subject_id, user_id, job.openai_job_id, job.openai_file_id, job.status)
     return FinetuneJob(**dict(row)) if row else None
 
 async def update_finetune_job(conn: asyncpg.Connection, job_id: UUID | str, updates: dict) -> FinetuneJob | None:

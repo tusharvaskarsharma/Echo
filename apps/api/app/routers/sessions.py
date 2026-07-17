@@ -20,7 +20,7 @@ def get_session_service(
 ) -> SessionService:
     """Dependency to inject the SessionService with the current user's DB connection."""
     subject_id = user.get("sub")
-    return SessionService(conn, subject_id)
+    return SessionService(conn, subject_id, user.get("email"))
 
 @router.post("", response_model=Session, status_code=status.HTTP_201_CREATED)
 async def create_session(

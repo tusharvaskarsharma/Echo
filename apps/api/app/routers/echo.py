@@ -24,15 +24,13 @@ async def require_legacy_contact(
 ) -> str:
     user_id = user.get("sub")
     
-    subject_id = await conn.fetchval("SELECT subject_id FROM echo_profiles WHERE id = $1", echo_id)
+    subject_id = await conn.fetchval("SELECT subject_id FROM echo_profiles WHERE id = $1 AND user_id = $2", echo_id, user_id)
     if not subject_id:
         raise HTTPException(status_code=404, detail="Echo profile not found")
         
-    access_level = await conn.fetchval("SELECT access_level FROM legacy_contacts WHERE subject_id = $1 AND user_id = $2", subject_id, user_id)
-    if not access_level:
-        raise HTTPException(status_code=403, detail="Unauthorized legacy contact")
-        
-    return access_level
+    # Echoes are private SaaS resources.  The owner always has full access;
+    # sharing is intentionally not inferred from a legacy-contact row.
+    return "owner"
 
 @router.post("/{echo_id}/converse")
 async def converse(

@@ -1,11 +1,14 @@
 import type { ConsentLevel, Memory, Profile } from "./types";
+import { createClient } from "./supabase/client";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 const request = async (endpoint: string, options: RequestInit = {}) => {
+  const { data: { session } } = await createClient().auth.getSession();
+  if (!session) throw new Error("You must be signed in.");
   const headers = {
     'Content-Type': 'application/json',
-    'Authorization': 'Bearer demo-token',
+    'Authorization': `Bearer ${session.access_token}`,
     ...options.headers,
   };
   
@@ -21,14 +24,18 @@ const request = async (endpoint: string, options: RequestInit = {}) => {
 
 export const api = {
   profile: async (): Promise<Profile> => {
-    // For demo purposes, returning a stubbed profile
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("You must be signed in.");
+    const { data, error } = await supabase.from("profiles").select("full_name,bio,voice_preferences").eq("id", user.id).single();
+    if (error) throw error;
     return {
-      id: "eleanor-74",
-      name: "Eleanor",
-      age: 74,
-      voice: "grandma",
-      bio: "Grandmother, retired teacher, loves gardening.",
-      session_count: 1,
+      id: user.id,
+      name: data.full_name || user.email || "Your legacy",
+      age: 0,
+      voice: data.voice_preferences?.preset || "alloy",
+      bio: data.bio || "Your private living legacy.",
+      session_count: 0,
       memory_count: 0
     };
   },
@@ -59,7 +66,9 @@ export const api = {
   },
   
   createDraft: async (sessionId: string, data: any) => {
-    // Fake draft response for the simulator
-    return { id: "draft-123" };
+    return request("/memories/draft", {
+      method: "POST",
+      body: JSON.stringify({ session_id: sessionId, ...data })
+    });
   }
 };

@@ -5,7 +5,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(".env", "../../.env"), env_file_encoding="utf-8", extra="ignore")
 
-    demo_mode: bool = True
     development_mode: bool = True  # When True, tasks run synchronously (no Redis/Celery needed)
     # Keep the development origins explicit.  Using "*" is incompatible with
     # credentialed browser requests and would mask deployment configuration bugs.
@@ -13,16 +12,16 @@ class Settings(BaseSettings):
         "http://localhost:3000,http://127.0.0.1:3000,"
         "http://localhost:3001,http://127.0.0.1:3001,https://echo-web.vercel.app"
     )
-    openai_api_key: str | None = None
+    openai_api_key: str
     openai_realtime_model: str = "gpt-realtime-2.1"
     openai_persona_model: str = "gpt-4.1-mini"
-    database_url: str | None = None
-    supabase_url: str | None = None
-    supabase_service_role_key: str | None = None
-    supabase_anon_key: str | None = None
-    supabase_jwt_secret: str | None = None
-    pinecone_api_key: str | None = None
-    pinecone_index: str | None = None
+    database_url: str
+    supabase_url: str
+    supabase_service_role_key: str
+    supabase_anon_key: str
+    supabase_jwt_secret: str
+    pinecone_api_key: str
+    pinecone_index: str
     pinecone_index_name: str = "echo-memories"
     pinecone_environment: str = "us-east-1"
     redis_url: str = "redis://localhost:6379/0"

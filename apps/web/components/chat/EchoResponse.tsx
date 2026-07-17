@@ -2,6 +2,7 @@
 import React, { useState, useRef } from 'react';
 import { Play, Square, Loader2, Volume2 } from 'lucide-react';
 import { API_BASE } from '../../lib/api';
+import { createClient } from '../../lib/supabase/client';
 
 interface Props {
   echoId: string;
@@ -54,10 +55,12 @@ export default function EchoResponse({ echoId }: Props) {
       const formData = new FormData();
       formData.append("text", question);
       
+      const { data: { session } } = await createClient().auth.getSession();
+      if (!session) throw new Error("You must be signed in.");
       const response = await fetch(`${API_BASE}/echo/${echoId}/converse`, {
         method: "POST",
         headers: {
-          'Authorization': `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('token') || 'demo-token' : 'demo-token'}`
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: formData
       });

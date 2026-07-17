@@ -26,8 +26,8 @@ app.add_middleware(AuthMiddleware)
 def health() -> dict:
     return {
         "ok": True,
-        "mode": "demo" if settings.demo_mode else "live",
-        "missing_live_integrations": settings.missing_live_integrations
+        "mode": "live",
+        "missing_live_integrations": settings.missing_live_integrations,
     }
 
 @app.get("/health/db")
@@ -80,6 +80,8 @@ def health_pinecone():
     return {"ok": True, "status": "pinecone api key configured"}
 
 app.include_router(auth.router)
+# Backward-compatible account deletion endpoint; the canonical endpoint is /auth/account.
+app.add_api_route("/account", auth.delete_account, methods=["DELETE"], status_code=204)
 app.include_router(sessions.router)
 app.include_router(memories.router)
 app.include_router(echo.router)
