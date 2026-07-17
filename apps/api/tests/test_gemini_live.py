@@ -40,7 +40,7 @@ def test_gemini_live_token_request_uses_constrained_v1alpha_contract(monkeypatch
     request = fake_client.request
     assert request["url"].endswith("/v1alpha/auth_tokens")
     assert request["headers"]["x-goog-api-key"] == "test-gemini-key"
-    auth_token = request["json"]["authToken"]
-    assert auth_token["uses"] == 1
-    assert auth_token["liveConnectConstraints"]["model"] == "gemini-3.1-flash-live-preview"
-    assert auth_token["liveConnectConstraints"]["config"]["responseModalities"] == ["AUDIO"]
+    token_config = request["json"]
+    assert token_config["uses"] == 1
+    assert token_config["bidiGenerateContentSetup"]["model"] == "models/gemini-3.1-flash-live-preview"
+    assert token_config["bidiGenerateContentSetup"]["generationConfig"]["responseModalities"] == ["AUDIO"]

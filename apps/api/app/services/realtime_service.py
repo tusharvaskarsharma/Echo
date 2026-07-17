@@ -26,13 +26,16 @@ class GeminiLiveService:
         # its wire format here instead of putting a Google SDK in the request
         # path; this API only needs a single, well-defined POST.
         request_body = {
-            "authToken": {
-                "uses": 1,
-                "expireTime": expires_at.isoformat().replace("+00:00", "Z"),
-                "newSessionExpireTime": new_session_expires_at.isoformat().replace("+00:00", "Z"),
-                "liveConnectConstraints": {
-                "model": self.settings.gemini_live_model,
-                    "config": {"responseModalities": ["AUDIO"]},
+            "uses": 1,
+            "expireTime": expires_at.isoformat().replace("+00:00", "Z"),
+            "newSessionExpireTime": new_session_expires_at.isoformat().replace("+00:00", "Z"),
+            "bidiGenerateContentSetup": {
+                "model": f"models/{self.settings.gemini_live_model}",
+                "generationConfig": {"responseModalities": ["AUDIO"]},
+                "inputAudioTranscription": {},
+                "outputAudioTranscription": {},
+                "systemInstruction": {
+                    "parts": [{"text": "You are Echo, a thoughtful interviewer helping capture the user's life story. Ask empathetic, concise follow-up questions."}]
                 },
             },
         }

@@ -1,5 +1,5 @@
 import asyncpg
-from fastapi import Request
+from fastapi import HTTPException, Request
 import logging
 
 from app.config import get_settings
@@ -85,7 +85,10 @@ db_client = DatabaseClient()
 async def get_db() -> asyncpg.Connection:
     """Dependency injection function for FastAPI routes."""
     if not db_client.pool:
-        raise RuntimeError("Database pool is not initialized")
+        raise HTTPException(
+            status_code=503,
+            detail="Memory storage is unavailable because the database connection is not configured or reachable.",
+        )
     
     async with db_client.pool.acquire() as connection:
         yield connection

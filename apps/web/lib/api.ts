@@ -14,7 +14,8 @@ const request = async (endpoint: string, options: RequestInit = {}) => {
   
   const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers, credentials: "include" });
   if (!res.ok) {
-    throw new Error(`API error: ${res.statusText}`);
+    const payload = await res.json().catch(() => null);
+    throw new Error(payload?.detail || payload?.error || `API error: ${res.status} ${res.statusText}`);
   }
   if (res.status === 204) {
     return null;
