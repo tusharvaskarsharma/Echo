@@ -41,6 +41,34 @@ async def get_session(conn: asyncpg.Connection, session_id: UUID | str) -> Optio
     row = await conn.fetchrow(query, session_id)
     return Session(**dict(row)) if row else None
 
+async def list_sessions(conn: asyncpg.Connection, subject_id: UUID | str, limit: int = 10, offset: int = 0) -> tuple[list[Session], int]:
+    count_query = "SELECT COUNT(*) FROM sessions WHERE subject_id = $1"
+    total = await conn.fetchval(count_query, subject_id)
+    
+    query = """
+    SELECT * FROM sessions WHERE subject_id = $1
+    ORDER BY created_at DESC
+    LIMIT $2 OFFSET $3
+    """
+    rows = await conn.fetch(query, subject_id, limit, offset)
+    items = [Session(**dict(row)) for row in rows]
+    return items, total
+
+async def update_session(conn: asyncpg.Connection, session: Session) -> Session:
+    query = """
+    UPDATE sessions SET status = $1, ended_at = $2
+    WHERE id = $3
+    RETURNING *
+    """
+    row = await conn.fetchrow(query, session.status, session.ended_at, session.id)
+    return Session(**dict(row)) if row else session
+
+async def delete_session(conn: asyncpg.Connection, session_id: UUID | str) -> bool:
+    query = "DELETE FROM sessions WHERE id = $1"
+    result = await conn.execute(query, session_id)
+    return result == "DELETE 1"
+
+
 async def create_memory(conn: asyncpg.Connection, memory: MemoryFragment) -> MemoryFragment:
     query = """
     INSERT INTO memories (id, session_id, subject_id, content, emotion_tags, topics, people_mentioned, consent_level, confidence_score)

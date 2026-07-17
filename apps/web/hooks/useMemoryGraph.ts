@@ -3,7 +3,7 @@ import { API_BASE } from '../lib/api';
 
 const fetcher = (url: string) => fetch(url, {
   headers: {
-    'Authorization': `Bearer ${localStorage.getItem('token')}` // simple fallback for auth
+    'Authorization': `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('token') || 'demo-token' : 'demo-token'}`
   }
 }).then(res => res.json());
 
@@ -37,7 +37,7 @@ export function useMemoryGraph() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('token') || 'demo-token' : 'demo-token'}`
         },
         body: JSON.stringify({ consent_level })
       });

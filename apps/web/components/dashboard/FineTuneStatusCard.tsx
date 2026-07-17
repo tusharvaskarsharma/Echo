@@ -6,7 +6,7 @@ import { API_BASE } from '../../lib/api';
 
 const fetcher = (url: string) => fetch(url, {
   headers: {
-    'Authorization': `Bearer ${localStorage.getItem('token')}`
+    'Authorization': `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('token') || 'demo-token' : 'demo-token'}`
   }
 }).then(res => res.json());
 

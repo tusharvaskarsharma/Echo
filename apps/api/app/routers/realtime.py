@@ -16,11 +16,12 @@ def get_realtime_service() -> RealtimeService:
 
 @router.post("/token")
 async def create_realtime_token(
-    service: Annotated[RealtimeService, Depends(get_realtime_service)]
+    user: Annotated[dict, Depends(get_current_user)],
+    service: Annotated[RealtimeService, Depends(get_realtime_service)],
 ):
     """
     Creates an ephemeral session token for the OpenAI Realtime API.
     The frontend uses this token to establish a WebRTC connection directly to OpenAI,
     keeping our server's API key strictly secret.
     """
-    return await service.create_ephemeral_token()
+    return await service.create_ephemeral_token(str(user["sub"]))

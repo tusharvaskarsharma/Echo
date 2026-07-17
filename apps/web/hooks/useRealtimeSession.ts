@@ -33,7 +33,7 @@ export function useRealtimeSession() {
       // 1. Get ephemeral token from our FastAPI backend
       // Assuming the user is logged in and we pass their auth token if needed.
       // For now, simple fetch (ensure your auth token is attached in a real scenario).
-      const tokenResponse = await fetch(`${API_BASE}/session/token`, {
+      const tokenResponse = await fetch(`/api/session/token`, {
         method: "POST",
       });
       if (!tokenResponse.ok) {
@@ -90,10 +90,9 @@ export function useRealtimeSession() {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      const baseUrl = "https://api.openai.com/v1/realtime";
-      const model = "gpt-4o-realtime-preview-2024-12-17";
+      const baseUrl = "https://api.openai.com/v1/realtime/calls";
       
-      const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
+      const sdpResponse = await fetch(baseUrl, {
         method: "POST",
         body: offer.sdp,
         headers: {

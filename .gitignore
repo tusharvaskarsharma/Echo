@@ -18,3 +18,7 @@ pip-delete-this-directory.txt
 .env.test.local
 .env.production.local
 .DS_Store
+.pnpm-store/
+*.egg-info/
+.turbo/
+tsconfig.tsbuildinfo

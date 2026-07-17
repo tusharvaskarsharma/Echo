@@ -15,19 +15,29 @@ logger = logging.getLogger(__name__)
 
 
 def _run_async(coro):
-    """Run an async coroutine from synchronous code, handling event-loop edge cases."""
+    """Run a coroutine without crossing event loops owned by asyncpg."""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = None
 
     if loop and loop.is_running():
-        # We're inside an already-running event loop (e.g. FastAPI).
-        # Schedule the coroutine on a new thread to avoid blocking.
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(asyncio.run, coro)
-            future.result()  # block until done
+        # FastAPI owns this loop and the database pool was created on it.  Do
+        # not run the work in a thread with another event loop: asyncpg then
+        # raises "Future attached to a different loop" and drops the pipeline.
+        task = loop.create_task(coro)
+
+        def report_failure(completed: asyncio.Task):
+            try:
+                completed.result()
+            except asyncio.CancelledError:
+                # Application shutdown cancels outstanding background work.
+                pass
+            except Exception:
+                logger.exception("Development background task failed")
+
+        task.add_done_callback(report_failure)
+        return task
     else:
         asyncio.run(coro)
 

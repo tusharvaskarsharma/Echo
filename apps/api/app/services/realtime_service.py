@@ -1,5 +1,6 @@
 import httpx
 import logging
+import hashlib
 from fastapi import HTTPException
 from app.config import get_settings
 
@@ -9,7 +10,7 @@ class RealtimeService:
     def __init__(self):
         self.settings = get_settings()
 
-    async def create_ephemeral_token(self) -> dict:
+    async def create_ephemeral_token(self, user_id: str) -> dict:
         """
         Calls the OpenAI REST API to generate a temporary client token for Realtime sessions.
         The token is bound to a specific configuration (VAD, voice, functions).
@@ -19,25 +20,27 @@ class RealtimeService:
                 return {"client_secret": "demo_token_12345", "expires_at": 1999999999}
             raise HTTPException(status_code=500, detail="OpenAI API key not configured")
 
-        url = "https://api.openai.com/v1/realtime/sessions"
+        # The Realtime WebRTC API now creates browser credentials at
+        # /v1/realtime/client_secrets, not the retired /sessions endpoint.
+        url = "https://api.openai.com/v1/realtime/client_secrets"
+        safety_identifier = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
         headers = {
             "Authorization": f"Bearer {self.settings.openai_api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "OpenAI-Safety-Identifier": safety_identifier,
         }
         
         # Configure the ephemeral session capabilities
         payload = {
-            "model": self.settings.openai_realtime_model,
-            "modalities": ["audio", "text"],
-            "instructions": "You are Echo, a thoughtful interviewer helping to capture the life story of the user. Ask engaging questions and be an empathetic listener.",
-            "voice": "alloy",
-            "turn_detection": {
-                "type": "server_vad",
-                "threshold": 0.5,
-                "prefix_padding_ms": 300,
-                "silence_duration_ms": 200
-            },
-            "tools": [] # Functions for memory extraction will go here in the future
+            "session": {
+                "type": "realtime",
+                "model": self.settings.openai_realtime_model,
+                "instructions": "You are Echo, a thoughtful interviewer helping to capture the life story of the user. Ask engaging questions and be an empathetic listener.",
+                "audio": {
+                    "input": {"turn_detection": {"type": "server_vad"}},
+                    "output": {"voice": "alloy"},
+                },
+            }
         }
 
         try:
@@ -47,14 +50,18 @@ class RealtimeService:
                 data = response.json()
                 
                 # We only return the client secret (the ephemeral token) to the frontend
-                client_secret = data.get("client_secret", {})
+                # client_secrets returns the ephemeral key in `value`.  Keep
+                # accepting the older nested shape to make rolling upgrades
+                # safe for an already-deployed API.
+                client_secret = data.get("value") or data.get("client_secret", {}).get("value")
+                expires_at = data.get("expires_at") or data.get("client_secret", {}).get("expires_at")
                 if not client_secret:
                     logger.error("OpenAI response did not contain client_secret")
                     raise HTTPException(status_code=500, detail="Failed to generate realtime session token")
                     
                 return {
-                    "client_secret": client_secret.get("value"),
-                    "expires_at": client_secret.get("expires_at")
+                    "client_secret": client_secret,
+                    "expires_at": expires_at
                 }
         except httpx.HTTPStatusError as e:
             logger.error(f"OpenAI API Error: {e.response.status_code} {e.response.text}")

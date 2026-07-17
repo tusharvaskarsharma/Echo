@@ -112,7 +112,7 @@ async def _process_session_async(session_id: str):
             })
             
         if vectors:
-            pinecone_service.upsert_vectors(vectors)
+            pinecone_service.upsert_vectors(str(subject_id), vectors)
             logger.info(f"Successfully upserted {len(vectors)} vectors to Pinecone.")
             
     except Exception as e:

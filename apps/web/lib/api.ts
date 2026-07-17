@@ -1,6 +1,6 @@
 import type { ConsentLevel, Memory, Profile } from "./types";
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 const request = async (endpoint: string, options: RequestInit = {}) => {
   const headers = {
@@ -9,7 +9,7 @@ const request = async (endpoint: string, options: RequestInit = {}) => {
     ...options.headers,
   };
   
-  const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+  const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers, credentials: "include" });
   if (!res.ok) {
     throw new Error(`API error: ${res.statusText}`);
   }

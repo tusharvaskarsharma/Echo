@@ -30,7 +30,9 @@ export function ConversationClient() {
     setQuestion(""); setSending(true);
     setTurns((items) => [...items, { id: `question-${Date.now()}`, speaker: "family", text: asked }, { id: responseId, speaker: "echo", text: "" }]);
     try {
-      const response = await fetch(`${API_BASE}/echo/eleanor-74/converse`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: asked, access_level: "family" }) });
+      const formData = new FormData();
+      formData.append("text", asked);
+      const response = await fetch(`${API_BASE}/echo/eleanor-74/converse`, { method: "POST", headers: { "Authorization": "Bearer demo-token" }, body: formData });
       if (!response.body) throw new Error("The response stream did not start.");
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ""; let finalText = "";
       while (true) {
@@ -38,12 +40,12 @@ export function ConversationClient() {
         buffer += decoder.decode(value, { stream: true });
         const frames = buffer.split("\n\n"); buffer = frames.pop() ?? "";
         for (const frame of frames) {
-          const name = frame.match(/^event: (.+)$/m)?.[1]; const dataLine = frame.match(/^data: (.+)$/m)?.[1]; if (!name || !dataLine) continue;
-          const data = JSON.parse(dataLine);
-          if (name === "text_delta") { finalText += data.text; setTurns((items) => items.map((turn) => turn.id === responseId ? { ...turn, text: finalText } : turn)); }
-          if (name === "refusal") { finalText = data.text; setTurns((items) => items.map((turn) => turn.id === responseId ? { ...turn, text: data.text, refusal: true } : turn)); }
-          if (name === "sources") setTurns((items) => items.map((turn) => turn.id === responseId ? { ...turn, sources: data.items } : turn));
-          if (name === "complete") speak(finalText);
+          const dataLine = frame.match(/^data: (.+)$/m)?.[1]; if (!dataLine) continue;
+          try {
+            const data = JSON.parse(dataLine);
+            if (data.type === "text") { finalText += data.text; setTurns((items) => items.map((turn) => turn.id === responseId ? { ...turn, text: finalText } : turn)); }
+            if (data.type === "sources") setTurns((items) => items.map((turn) => turn.id === responseId ? { ...turn, sources: data.sources } : turn));
+          } catch { /* skip malformed frames */ }
         }
       }
     } catch { setTurns((items) => items.map((turn) => turn.id === responseId ? { ...turn, text: "I am having trouble finding my memories right now. Please try again in a moment.", refusal: true } : turn)); }

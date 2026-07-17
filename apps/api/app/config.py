@@ -3,16 +3,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # Pinecone
-    pinecone_api_key: str = ""
-    pinecone_index_name: str = "echo-memories"
-    pinecone_environment: str = "us-east-1"
-    
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=(".env", "../../.env"), env_file_encoding="utf-8", extra="ignore")
 
     demo_mode: bool = True
     development_mode: bool = True  # When True, tasks run synchronously (no Redis/Celery needed)
-    cors_origins: str = "http://localhost:3000,https://echo-web.vercel.app"
+    # Keep the development origins explicit.  Using "*" is incompatible with
+    # credentialed browser requests and would mask deployment configuration bugs.
+    cors_origins: str = (
+        "http://localhost:3000,http://127.0.0.1:3000,"
+        "http://localhost:3001,http://127.0.0.1:3001,https://echo-web.vercel.app"
+    )
     openai_api_key: str | None = None
     openai_realtime_model: str = "gpt-realtime-2.1"
     openai_persona_model: str = "gpt-4.1-mini"
@@ -23,7 +23,14 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str | None = None
     pinecone_api_key: str | None = None
     pinecone_index: str | None = None
+    pinecone_index_name: str = "echo-memories"
+    pinecone_environment: str = "us-east-1"
     redis_url: str = "redis://localhost:6379/0"
+
+    @property
+    def openai_model(self) -> str:
+        """Alias for openai_persona_model — used by memory_extractor and other services."""
+        return self.openai_persona_model
 
     @property
     def missing_live_integrations(self) -> list[str]:
@@ -41,4 +48,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

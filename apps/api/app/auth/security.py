@@ -11,10 +11,16 @@ def verify_jwt_token(token: str) -> dict:
     Returns the decoded payload if valid.
     """
     settings = get_settings()
+    
+    if settings.demo_mode:
+        logger.warning("Demo mode active: bypassing JWT verification.")
+        return {
+            "sub": "00000000-0000-0000-0000-000000000000", 
+            "role": "authenticated",
+            "app_metadata": {"role": "subject"}
+        }
+
     if not settings.supabase_jwt_secret:
-        if settings.demo_mode:
-            logger.warning("Demo mode active: bypassing JWT verification.")
-            return {"sub": "demo-user", "role": "authenticated"}
         raise HTTPException(status_code=500, detail="Supabase JWT secret not configured.")
 
     try:

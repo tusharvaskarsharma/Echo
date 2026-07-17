@@ -40,7 +40,7 @@ async def update_memory_consent(
     
     try:
         pinecone_service = PineconeService()
-        pinecone_service.update_metadata(memory_id, {"consent_level": patch.consent_level.value})
+        pinecone_service.update_metadata(str(subject_id), memory_id, {"consent_level": patch.consent_level.value})
     except Exception as e:
         print(f"Failed to sync pinecone: {e}")
         

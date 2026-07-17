@@ -31,6 +31,7 @@ class RetrievalService:
         
         # Query pinecone
         matches = self.pinecone_service.query(
+            namespace=subject_id,
             vector=question_vector,
             top_k=12,
             filter=metadata_filter

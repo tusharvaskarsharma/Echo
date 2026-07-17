@@ -57,7 +57,7 @@ export default function EchoResponse({ echoId }: Props) {
       const response = await fetch(`${API_BASE}/echo/${echoId}/converse`, {
         method: "POST",
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('token') || 'demo-token' : 'demo-token'}`
         },
         body: formData
       });
