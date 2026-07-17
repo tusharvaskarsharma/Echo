@@ -162,11 +162,11 @@ async def create_finetune_job(conn: asyncpg.Connection, job: FinetuneJob) -> Fin
     if not user_id:
         raise ValueError("Cannot create a fine-tuning job without an owning user")
     query = """
-    INSERT INTO finetune_jobs (id, subject_id, user_id, openai_job_id, openai_file_id, status)
+    INSERT INTO finetune_jobs (id, subject_id, user_id, provider_job_id, provider_file_id, status)
     VALUES ($1, $2, $3, $4, $5, $6)
     RETURNING *
     """
-    row = await conn.fetchrow(query, job.id, job.subject_id, user_id, job.openai_job_id, job.openai_file_id, job.status)
+    row = await conn.fetchrow(query, job.id, job.subject_id, user_id, job.provider_job_id, job.provider_file_id, job.status)
     return FinetuneJob(**dict(row)) if row else None
 
 async def update_finetune_job(conn: asyncpg.Connection, job_id: UUID | str, updates: dict) -> FinetuneJob | None:

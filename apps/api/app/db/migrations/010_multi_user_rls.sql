@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS profiles (
     country TEXT,
     theme_preference TEXT DEFAULT 'system',
     notification_preferences JSONB DEFAULT '{"email": true, "push": false}'::jsonb,
-    ai_preferences JSONB DEFAULT '{"model": "gpt-4.1-mini", "creativity": 0.7}'::jsonb,
+    ai_preferences JSONB DEFAULT '{"model": "llama-3.3-70b-versatile", "creativity": 0.7}'::jsonb,
     voice_preferences JSONB DEFAULT '{"speed": 1.0, "pitch": 1.0}'::jsonb,
     privacy_settings JSONB DEFAULT '{"share_data": false}'::jsonb,
     subscription_plan TEXT DEFAULT 'free',

@@ -36,7 +36,10 @@ class DatabaseClient:
                 await self.run_migrations(conn)
         except Exception as e:
             logger.error(f"Failed to connect to the database: {e}")
-            raise
+            if not settings.development_mode:
+                raise
+            logger.warning("DEVELOPMENT_MODE=true — continuing without database. DB-dependent routes will fail at request time.")
+            self.pool = None
 
     async def run_migrations(self, conn: asyncpg.Connection):
         import os
@@ -84,5 +87,21 @@ async def get_db() -> asyncpg.Connection:
     if not db_client.pool:
         raise RuntimeError("Database pool is not initialized")
     
+    async with db_client.pool.acquire() as connection:
+        yield connection
+
+
+async def get_optional_db() -> asyncpg.Connection | None:
+    """Return a connection when PostgreSQL is available.
+
+    Local development can use Supabase Auth while the direct database hostname
+    is unavailable (for example, on IPv4-only networks). Read-only dashboard
+    endpoints use this dependency so they can return an empty owned collection
+    instead of leaking an internal 500 error.
+    """
+    if not db_client.pool:
+        yield None
+        return
+
     async with db_client.pool.acquire() as connection:
         yield connection

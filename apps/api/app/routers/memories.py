@@ -3,7 +3,7 @@ from typing import Annotated, List
 import asyncpg
 
 from app.auth.dependencies import require_subject
-from app.db.client import get_db
+from app.db.client import get_db, get_optional_db
 from app.db import repositories
 from app.models.memory import MemoryFragment, MemoryPatch, DraftMemoryCreate, ConsentLevel
 from uuid import uuid4
@@ -35,8 +35,13 @@ async def create_draft_memory(
 @router.get("", response_model=List[MemoryFragment])
 async def list_memories(
     user: Annotated[dict, Depends(require_subject)],
-    conn: Annotated[asyncpg.Connection, Depends(get_db)]
+    conn: Annotated[asyncpg.Connection | None, Depends(get_optional_db)]
 ):
+    if conn is None:
+        # The caller is authenticated, but the local API has no direct
+        # PostgreSQL connection.  An empty list is the safe dashboard state:
+        # it exposes no other user's data and avoids an internal-server error.
+        return []
     subject_id = user.get("sub")
     memories = await repositories.list_memories(conn, subject_id)
     return memories

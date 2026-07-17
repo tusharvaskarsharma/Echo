@@ -24,7 +24,7 @@ class Persona(BaseModel):
 class PersonaVersion(BaseModel):
     id: UUID
     persona_id: UUID
-    openai_model_id: Optional[str] = None
+    provider_model_id: Optional[str] = None
     status: str
     training_data_url: Optional[str] = None
     created_at: datetime

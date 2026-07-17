@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from .config import get_settings
 
-from .routers import sessions, memories, echo, finetune, webhooks, auth, realtime
+from .routers import sessions, memories, echo, finetune, auth, realtime
 from .db.client import db_client
 from .auth.middleware import AuthMiddleware
 
@@ -54,21 +54,14 @@ def health_redis():
     except Exception as e:
         return {"ok": False, "status": str(e)}
 
-@app.get("/health/openai")                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
-def health_openai():
-    import os
-    import httpx
-    api_key = os.getenv("OPENAI_API_KEY", settings.openai_api_key)
-    if not api_key:
-        return {"ok": False, "status": "no api key"}
-    
-    # We can just check if key is loaded for a lightweight check, 
-    # but a real check can query the models endpoint
-    try:
-        resp = httpx.get("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {api_key}"}, timeout=5.0)
-        return {"ok": resp.status_code == 200, "status": resp.status_code}
-    except Exception as e:
-        return {"ok": False, "status": str(e)}
+@app.get("/health/providers")
+def health_providers():
+    """Reports provider configuration without disclosing credentials."""
+    return {
+        "ok": bool(settings.gemini_api_key and settings.groq_api_key),
+        "gemini_live_model": settings.gemini_live_model,
+        "groq_persona_model": settings.groq_persona_model,
+    }
 
 @app.get("/health/pinecone")
 def health_pinecone():
@@ -86,7 +79,6 @@ app.include_router(sessions.router)
 app.include_router(memories.router)
 app.include_router(echo.router)
 app.include_router(finetune.router)
-app.include_router(webhooks.router)
 app.include_router(realtime.router)
 
 # Wrap the complete application rather than adding CORS inside the middleware

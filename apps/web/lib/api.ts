@@ -27,14 +27,16 @@ export const api = {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("You must be signed in.");
-    const { data, error } = await supabase.from("profiles").select("full_name,bio,voice_preferences").eq("id", user.id).single();
-    if (error) throw error;
+    // Auth metadata is always available to its owner.  Do not make the
+    // dashboard depend on a direct `profiles` query, since a newly provisioned
+    // Supabase project may not have its RLS migration applied yet.
+    const metadata = user.user_metadata ?? {};
     return {
       id: user.id,
-      name: data.full_name || user.email || "Your legacy",
+      name: metadata.full_name || metadata.name || user.email || "Your legacy",
       age: 0,
-      voice: data.voice_preferences?.preset || "alloy",
-      bio: data.bio || "Your private living legacy.",
+      voice: metadata.voice_preferences?.preset || "alloy",
+      bio: metadata.bio || "Your private living legacy.",
       session_count: 0,
       memory_count: 0
     };

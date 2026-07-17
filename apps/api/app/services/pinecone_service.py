@@ -22,7 +22,7 @@ class PineconeService:
                 logger.info(f"Creating Pinecone index '{self.index_name}'...")
                 self.pc.create_index(
                     name=self.index_name,
-                    dimension=3072, # Using standard OpenAI dimensions for text-embedding-3-large
+                    dimension=3072, # Gemini embeddings retain the existing Pinecone vector dimension.
                     metric="cosine",
                     spec=ServerlessSpec(
                         cloud="aws",

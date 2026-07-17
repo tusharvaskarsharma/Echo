@@ -1,7 +1,40 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
-import { API_BASE } from "../lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+const GEMINI_LIVE_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained";
+const INPUT_SAMPLE_RATE = 16_000;
+const OUTPUT_SAMPLE_RATE = 24_000;
+
+function bytesToBase64(bytes: Uint8Array) {
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return btoa(binary);
+}
+
+function base64ToInt16(base64: string) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Int16Array(bytes.buffer);
+}
+
+function resampleToPcm16(samples: Float32Array, sourceRate: number) {
+  const ratio = sourceRate / INPUT_SAMPLE_RATE;
+  const length = Math.max(1, Math.round(samples.length / ratio));
+  const pcm = new Int16Array(length);
+  for (let outputIndex = 0; outputIndex < length; outputIndex += 1) {
+    const sourceIndex = outputIndex * ratio;
+    const lower = Math.floor(sourceIndex);
+    const upper = Math.min(lower + 1, samples.length - 1);
+    const fraction = sourceIndex - lower;
+    const sample = samples[lower] * (1 - fraction) + samples[upper] * fraction;
+    pcm[outputIndex] = Math.max(-1, Math.min(1, sample)) * 0x7fff;
+  }
+  return new Uint8Array(pcm.buffer);
+}
 
 export function useRealtimeSession() {
   const [isConnected, setIsConnected] = useState(false);
@@ -10,132 +43,156 @@ export function useRealtimeSession() {
   const [messages, setMessages] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const pcRef = useRef<RTCPeerConnection | null>(null);
-  const dcRef = useRef<RTCDataChannel | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const inputContextRef = useRef<AudioContext | null>(null);
+  const outputContextRef = useRef<AudioContext | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const mutedGainRef = useRef<GainNode | null>(null);
+  const nextAudioTimeRef = useRef(0);
+  const connectedRef = useRef(false);
 
-  // Initialize audio element
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      audioRef.current = document.createElement("audio");
-      audioRef.current.autoplay = true;
-    }
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.srcObject = null;
-      }
-    };
-  }, []);
-
-  const connect = useCallback(async () => {
-    setError(null);
-    try {
-      // 1. Get ephemeral token from our FastAPI backend
-      // Assuming the user is logged in and we pass their auth token if needed.
-      // For now, simple fetch (ensure your auth token is attached in a real scenario).
-      const tokenResponse = await fetch(`/api/session/token`, {
-        method: "POST",
-      });
-      if (!tokenResponse.ok) {
-        throw new Error("Failed to get realtime token from server");
-      }
-      const data = await tokenResponse.json();
-      const ephemeralKey = data.client_secret;
-
-      // 2. Set up WebRTC
-      const pc = new RTCPeerConnection();
-      pcRef.current = pc;
-
-      // Set up remote audio playback
-      pc.ontrack = (e) => {
-        if (audioRef.current) {
-          audioRef.current.srcObject = e.streams[0];
-        }
-      };
-
-      // Get local microphone
-      const ms = await navigator.mediaDevices.getUserMedia({ audio: true });
-      pc.addTrack(ms.getTracks()[0]);
-
-      // Create DataChannel for events
-      const dc = pc.createDataChannel("oai-events");
-      dcRef.current = dc;
-
-      dc.addEventListener("open", () => {
-        setIsConnected(true);
-      });
-
-      dc.addEventListener("message", (e) => {
-        try {
-          const event = JSON.parse(e.data);
-          setMessages((prev) => [...prev, event]);
-          
-          if (event.type === "response.audio_transcript.delta") {
-            setTranscript((prev) => prev + event.delta);
-          }
-          if (event.type === "input_audio_buffer.speech_started") {
-            setIsSpeaking(true);
-            // Optionally clear transcript on new speech
-            setTranscript(""); 
-          }
-          if (event.type === "input_audio_buffer.speech_stopped") {
-            setIsSpeaking(false);
-          }
-        } catch (err) {
-          console.error("Failed to parse event", err);
-        }
-      });
-
-      // 3. Create offer and send to OpenAI
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      const baseUrl = "https://api.openai.com/v1/realtime/calls";
-      
-      const sdpResponse = await fetch(baseUrl, {
-        method: "POST",
-        body: offer.sdp,
-        headers: {
-          Authorization: `Bearer ${ephemeralKey}`,
-          "Content-Type": "application/sdp",
-        },
-      });
-
-      if (!sdpResponse.ok) {
-        throw new Error("Failed to connect to OpenAI Realtime");
-      }
-
-      const answer = {
-        type: "answer" as RTCSdpType,
-        sdp: await sdpResponse.text(),
-      };
-      await pc.setRemoteDescription(answer);
-
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Connection failed");
-      setIsConnected(false);
-    }
-  }, []);
-
-  const disconnect = useCallback(() => {
-    if (dcRef.current) {
-      dcRef.current.close();
-    }
-    if (pcRef.current) {
-      pcRef.current.close();
-    }
+  const cleanup = useCallback(() => {
+    socketRef.current?.close();
+    socketRef.current = null;
+    processorRef.current?.disconnect();
+    sourceRef.current?.disconnect();
+    mutedGainRef.current?.disconnect();
+    processorRef.current = null;
+    sourceRef.current = null;
+    mutedGainRef.current = null;
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    void inputContextRef.current?.close();
+    void outputContextRef.current?.close();
+    inputContextRef.current = null;
+    outputContextRef.current = null;
+    nextAudioTimeRef.current = 0;
+    connectedRef.current = false;
     setIsConnected(false);
     setIsSpeaking(false);
   }, []);
 
-  return {
-    connect,
-    disconnect,
-    isConnected,
-    isSpeaking,
-    transcript,
-    messages,
-    error,
-  };
+  useEffect(() => cleanup, [cleanup]);
+
+  const playGeminiAudio = useCallback(async (base64: string) => {
+    let context = outputContextRef.current;
+    if (!context) {
+      context = new AudioContext();
+      outputContextRef.current = context;
+    }
+    await context.resume();
+    const pcm = base64ToInt16(base64);
+    const audioBuffer = context.createBuffer(1, pcm.length, OUTPUT_SAMPLE_RATE);
+    const channel = audioBuffer.getChannelData(0);
+    for (let index = 0; index < pcm.length; index += 1) channel[index] = pcm[index] / 0x8000;
+    const source = context.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(context.destination);
+    const startAt = Math.max(context.currentTime + 0.03, nextAudioTimeRef.current);
+    source.start(startAt);
+    nextAudioTimeRef.current = startAt + audioBuffer.duration;
+  }, []);
+
+  const connect = useCallback(async () => {
+    cleanup();
+    setError(null);
+    try {
+      console.info("[Gemini Live] Requesting microphone permission");
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      streamRef.current = stream;
+
+      // Request only after permission: a Gemini ephemeral token has one minute
+      // to begin its one allowed session.
+      const tokenResponse = await fetch("/api/session/token", { method: "POST" });
+      const tokenPayload = await tokenResponse.json().catch(() => null);
+      if (!tokenResponse.ok) throw new Error(tokenPayload?.error || tokenPayload?.detail || "Unable to start Gemini Live.");
+      if (!tokenPayload?.access_token || !tokenPayload?.model) throw new Error("The server did not return a Gemini Live token and model.");
+
+      const url = `${GEMINI_LIVE_URL}?access_token=${encodeURIComponent(tokenPayload.access_token)}`;
+      const socket = new WebSocket(url);
+      socketRef.current = socket;
+      socket.addEventListener("open", () => {
+        console.info("[Gemini Live] WebSocket connected; sending setup", { model: tokenPayload.model });
+        socket.send(JSON.stringify({
+          setup: {
+            model: `models/${tokenPayload.model}`,
+            responseModalities: ["AUDIO"],
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
+            systemInstruction: { parts: [{ text: "You are Echo, a thoughtful interviewer helping capture the user's life story. Ask empathetic, concise follow-up questions." }] },
+          },
+        }));
+      });
+      socket.addEventListener("error", () => setError("Gemini Live WebSocket connection failed."));
+      socket.addEventListener("close", () => {
+        console.info("[Gemini Live] WebSocket closed");
+        connectedRef.current = false;
+        setIsConnected(false);
+        setIsSpeaking(false);
+      });
+      socket.addEventListener("message", async (event) => {
+        const message = JSON.parse(event.data);
+        setMessages((previous) => [...previous, message]);
+        if (message.error) {
+          setError(message.error.message || "Gemini Live returned an error.");
+          return;
+        }
+        if (message.setupComplete) {
+          console.info("[Gemini Live] Setup complete; streaming microphone audio");
+          connectedRef.current = true;
+          setIsConnected(true);
+          return;
+        }
+        const content = message.serverContent;
+        if (!content) return;
+        if (content.inputTranscription?.text) setTranscript((previous) => `${previous}${previous ? "\n" : ""}${content.inputTranscription.text}`);
+        if (content.outputTranscription?.text) setTranscript((previous) => `${previous}${previous ? "\nEcho: " : "Echo: "}${content.outputTranscription.text}`);
+        if (content.modelTurn?.parts) {
+          for (const part of content.modelTurn.parts) {
+            if (part.inlineData?.data) await playGeminiAudio(part.inlineData.data);
+          }
+        }
+        if (content.turnComplete) setIsSpeaking(false);
+      });
+
+      const inputContext = new AudioContext();
+      inputContextRef.current = inputContext;
+      await inputContext.resume();
+      const source = inputContext.createMediaStreamSource(stream);
+      const processor = inputContext.createScriptProcessor(4096, 1, 1);
+      const mutedGain = inputContext.createGain();
+      mutedGain.gain.value = 0;
+      sourceRef.current = source;
+      processorRef.current = processor;
+      mutedGainRef.current = mutedGain;
+      processor.onaudioprocess = (audioEvent) => {
+        if (socket.readyState !== WebSocket.OPEN || !connectedRef.current) return;
+        setIsSpeaking(true);
+        const pcm = resampleToPcm16(audioEvent.inputBuffer.getChannelData(0), inputContext.sampleRate);
+        socket.send(JSON.stringify({ realtimeInput: { audio: { data: bytesToBase64(pcm), mimeType: "audio/pcm;rate=16000" } } }));
+      };
+      source.connect(processor);
+      processor.connect(mutedGain);
+      mutedGain.connect(inputContext.destination);
+    } catch (connectError: any) {
+      console.error("[Gemini Live] Connection failed", connectError);
+      cleanup();
+      setError(connectError.message || "Gemini Live connection failed.");
+    }
+  }, [cleanup, playGeminiAudio]);
+
+  const disconnect = useCallback(() => cleanup(), [cleanup]);
+
+  const submitText = useCallback((text: string) => {
+    const cleanText = text.trim();
+    if (!cleanText) return;
+    setTranscript((previous) => `${previous}${previous ? "\n" : ""}${cleanText}`);
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ realtimeInput: { text: cleanText } }));
+    }
+  }, []);
+
+  return { connect, disconnect, isConnected, isSpeaking, transcript, messages, error, submitText };
 }

@@ -3,8 +3,8 @@ import json
 import uuid
 import tempfile
 from typing import List
-from openai import AsyncOpenAI
 from app.config import get_settings
+from app.services.groq_service import GroqService
 from app.models.memory import MemoryFragment
 from app.models.finetune import FinetuneJob
 from app.db import repositories
@@ -14,7 +14,7 @@ class FinetuneBuilderService:
     def __init__(self, conn: asyncpg.Connection):
         self.conn = conn
         self.settings = get_settings()
-        self.client = AsyncOpenAI(api_key=self.settings.openai_api_key)
+        self.groq = GroqService()
 
     async def check_eligibility(self, subject_id: str) -> bool:
         """Check if subject has >= 3 sessions and >= 150 memories."""
@@ -47,25 +47,11 @@ class FinetuneBuilderService:
             # 1. Synthesize Dataset
             dataset_path = await self._generate_jsonl(subject_id, memories)
             
-            # 2. Upload to OpenAI
-            await repositories.update_finetune_job(self.conn, job_id, {"status": "uploading"})
-            with open(dataset_path, "rb") as f:
-                openai_file = await self.client.files.create(
-                    file=f,
-                    purpose="fine-tune"
-                )
-            
-            # 3. Create Fine-tuning Job
-            openai_job = await self.client.fine_tuning.jobs.create(
-                training_file=openai_file.id,
-                model="gpt-4o-mini"
-            )
-            
-            # 4. Update job record
+            # Groq does not offer an equivalent hosted fine-tuning API.  Echo
+            # retains the generated, consent-scoped dataset for RAG/persona
+            # evaluation instead of uploading private memories to another host.
             return await repositories.update_finetune_job(self.conn, job_id, {
-                "openai_job_id": openai_job.id,
-                "openai_file_id": openai_file.id,
-                "status": "running"
+                "status": "completed"
             })
             
         except Exception as e:
@@ -76,8 +62,7 @@ class FinetuneBuilderService:
             raise
 
     async def _generate_jsonl(self, subject_id: str, memories: List[MemoryFragment]) -> str:
-        # We will use GPT-4o-mini to generate conversational pairs from the memories.
-        # This acts as our data synthesis engine.
+        # Groq generates evaluation pairs; no external fine-tuning job is created.
         
         subject_record = await self.conn.fetchrow("SELECT full_name FROM subjects WHERE id = $1", subject_id)
         subject_name = subject_record["full_name"] if subject_record else "Subject"
@@ -103,14 +88,10 @@ class FinetuneBuilderService:
             {mem_text}
             """
             
-            completion = await self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"}
-            )
+            completion = await self.groq.complete([{"role": "user", "content": prompt}], json_mode=True)
             
             try:
-                res = json.loads(completion.choices[0].message.content)
+                res = json.loads(completion)
                 pairs = res.get("pairs", [])
                 if not pairs and isinstance(res, dict):
                     # sometimes the model returns keys like 'qa_pairs'

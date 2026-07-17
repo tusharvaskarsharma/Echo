@@ -1,69 +1,64 @@
-import httpx
+"""Gemini Live ephemeral-token provisioning for browser voice sessions."""
+
+import datetime
 import logging
-import hashlib
+
+import httpx
 from fastapi import HTTPException
+
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-class RealtimeService:
+
+class GeminiLiveService:
     def __init__(self):
         self.settings = get_settings()
 
     async def create_ephemeral_token(self, user_id: str) -> dict:
-        """
-        Calls the OpenAI REST API to generate a temporary client token for Realtime sessions.
-        The token is bound to a specific configuration (VAD, voice, functions).
-        """
-        if not self.settings.openai_api_key:
-            raise HTTPException(status_code=500, detail="OpenAI API key not configured")
-
-        # The Realtime WebRTC API now creates browser credentials at
-        # /v1/realtime/client_secrets, not the retired /sessions endpoint.
-        url = "https://api.openai.com/v1/realtime/client_secrets"
-        safety_identifier = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
-        headers = {
-            "Authorization": f"Bearer {self.settings.openai_api_key}",
-            "Content-Type": "application/json",
-            "OpenAI-Safety-Identifier": safety_identifier,
-        }
-        
-        # Configure the ephemeral session capabilities
-        payload = {
-            "session": {
-                "type": "realtime",
-                "model": self.settings.openai_realtime_model,
-                "instructions": "You are Echo, a thoughtful interviewer helping to capture the life story of the user. Ask engaging questions and be an empathetic listener.",
-                "audio": {
-                    "input": {"turn_detection": {"type": "server_vad"}},
-                    "output": {"voice": "alloy"},
+        """Provision a constrained, one-use Gemini Live token for a browser session."""
+        if not self.settings.gemini_api_key:
+            raise HTTPException(status_code=503, detail="GEMINI_API_KEY is not configured")
+        now = datetime.datetime.now(tz=datetime.timezone.utc)
+        expires_at = now + datetime.timedelta(minutes=30)
+        new_session_expires_at = now + datetime.timedelta(minutes=1)
+        # AuthTokenService.CreateToken is currently a v1alpha endpoint. Keep
+        # its wire format here instead of putting a Google SDK in the request
+        # path; this API only needs a single, well-defined POST.
+        request_body = {
+            "authToken": {
+                "uses": 1,
+                "expireTime": expires_at.isoformat().replace("+00:00", "Z"),
+                "newSessionExpireTime": new_session_expires_at.isoformat().replace("+00:00", "Z"),
+                "liveConnectConstraints": {
+                "model": self.settings.gemini_live_model,
+                    "config": {"responseModalities": ["AUDIO"]},
                 },
-            }
+            },
         }
-
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, headers=headers, json=payload, timeout=10.0)
-                response.raise_for_status()
-                data = response.json()
-                
-                # We only return the client secret (the ephemeral token) to the frontend
-                # client_secrets returns the ephemeral key in `value`.  Keep
-                # accepting the older nested shape to make rolling upgrades
-                # safe for an already-deployed API.
-                client_secret = data.get("value") or data.get("client_secret", {}).get("value")
-                expires_at = data.get("expires_at") or data.get("client_secret", {}).get("expires_at")
-                if not client_secret:
-                    logger.error("OpenAI response did not contain client_secret")
-                    raise HTTPException(status_code=500, detail="Failed to generate realtime session token")
-                    
-                return {
-                    "client_secret": client_secret,
-                    "expires_at": expires_at
-                }
-        except httpx.HTTPStatusError as e:
-            logger.error(f"OpenAI API Error: {e.response.status_code} {e.response.text}")
-            raise HTTPException(status_code=502, detail="Failed to communicate with OpenAI API")
-        except httpx.RequestError as e:
-            logger.error(f"Network error calling OpenAI API: {e}")
-            raise HTTPException(status_code=502, detail="Network error calling OpenAI API")
+            logger.info("Provisioning Gemini Live token for user %s", user_id)
+            async with httpx.AsyncClient(timeout=20) as client:
+                response = await client.post(
+                    "https://generativelanguage.googleapis.com/v1alpha/auth_tokens",
+                    headers={"x-goog-api-key": self.settings.gemini_api_key},
+                    json=request_body,
+                )
+            if response.is_error:
+                logger.error("Gemini Live token provisioning failed: status=%s body=%s", response.status_code, response.text[:500])
+                raise HTTPException(status_code=502, detail="Gemini rejected Live token provisioning")
+            token = response.json()
+            access_token = token.get("name")
+            if not access_token:
+                raise HTTPException(status_code=502, detail="Gemini did not return a Live session token")
+            logger.info("Provisioned Gemini Live token for user %s", user_id)
+            return {
+                "access_token": access_token,
+                "model": self.settings.gemini_live_model,
+                "expires_at": token.get("expireTime") or expires_at.isoformat(),
+            }
+        except HTTPException:
+            raise
+        except Exception as error:
+            logger.exception("Gemini Live token provisioning failed for user %s", user_id)
+            raise HTTPException(status_code=502, detail="Failed to provision a Gemini Live session") from error

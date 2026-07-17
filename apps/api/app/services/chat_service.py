@@ -1,11 +1,10 @@
 import logging
 import time
 from uuid import uuid4
-from openai import AsyncOpenAI
 from app.config import get_settings
 from app.services.retrieval_service import RetrievalService
 from app.services.persona_service import PersonaService
-from app.services.tts_service import TTSService
+from app.services.groq_service import GroqService
 from app.models.echo import ConverseResponse, Citation
 from datetime import datetime, timezone
 import json
@@ -17,19 +16,17 @@ class ChatService:
     def __init__(self, conn):
         self.conn = conn
         self.settings = get_settings()
-        self.client = AsyncOpenAI(api_key=self.settings.openai_api_key)
+        self.groq = GroqService()
         self.retrieval_service = RetrievalService()
         self.persona_service = PersonaService()
-        self.tts_service = TTSService()
 
     async def converse_stream(self, echo_id: str, user_id: str, access_level: str, text: str = None, audio_path: str = None):
         start_time = time.time()
         
         # 1. Handle Audio vs Text
         if audio_path:
-            with open(audio_path, "rb") as f:
-                transcript = await self.client.audio.transcriptions.create(model="whisper-1", file=f)
-                text = transcript.text
+            segments = await self.groq.transcribe(audio_path)
+            text = " ".join(segment.get("text", "") for segment in segments).strip()
                 
         if not text:
             raise ValueError("Either text or audio must be provided.")
@@ -40,8 +37,6 @@ class ChatService:
             raise ValueError("Echo profile not found.")
             
         subject_id = subject_record["subject_id"]
-        voice_preset = subject_record["voice_preset"] or "alloy"
-        model = subject_record["fine_tuned_model"] or "gpt-4o-mini"
         
         # 3. Retrieval
         allowed_consent = ["public"]
@@ -62,12 +57,6 @@ class ChatService:
             async def fallback_stream():
                 await queue.put({"type": "text", "text": response_text})
                 await queue.put({"type": "sources", "sources": []})
-                
-                try:
-                    audio_b64 = await self.tts_service.generate_speech(response_text, voice=voice_preset)
-                    await queue.put({"type": "audio", "audio": audio_b64})
-                except Exception as e:
-                    logger.error(f"TTS failed: {e}")
                 
                 await queue.put(None)
                 
@@ -98,35 +87,17 @@ class ChatService:
                 ))
         
         # 5. LLM Streaming Call
-        completion_stream = await self.client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": text}
-            ],
-            temperature=0.3,
-            stream=True
-        )
-        
-        async def generate_audio(sentence: str):
-            try:
-                # small wait so it doesn't slam the API instantly, yielding to other tasks
-                await asyncio.sleep(0.01)
-                audio_b64 = await self.tts_service.generate_speech(sentence, voice=voice_preset)
-                await queue.put({
-                    "type": "audio",
-                    "audio": audio_b64
-                })
-            except Exception as e:
-                logger.error(f"TTS generation failed: {e}")
+        completion_stream = self.groq.stream_chat([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text},
+        ])
 
         async def read_stream():
             sentence_buffer = ""
             full_text = ""
             
             try:
-                async for chunk in completion_stream:
-                    content = chunk.choices[0].delta.content or ""
+                async for content in completion_stream:
                     if content:
                         full_text += content
                         await queue.put({
@@ -137,20 +108,13 @@ class ChatService:
                         sentence_buffer += content
                         if any(p in content for p in [".", "?", "!", "\n"]):
                             clean_sentence = sentence_buffer.strip()
-                            if clean_sentence:
-                                asyncio.create_task(generate_audio(clean_sentence))
                             sentence_buffer = ""
                             
-                if sentence_buffer.strip():
-                    asyncio.create_task(generate_audio(sentence_buffer.strip()))
-                    
                 await queue.put({
                     "type": "sources",
                     "sources": [s.model_dump() for s in sources]
                 })
                 
-                # Give TTS tasks a moment to queue and finish if short response
-                await asyncio.sleep(1)
                 await queue.put(None)
                 
                 latency = int((time.time() - start_time) * 1000)

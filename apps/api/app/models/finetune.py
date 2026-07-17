@@ -6,8 +6,8 @@ class FinetuneJob(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID | str
     subject_id: UUID | str
-    openai_job_id: str | None = None
-    openai_file_id: str | None = None
+    provider_job_id: str | None = None
+    provider_file_id: str | None = None
     status: str
     cost_usd: float | None = None
     duration_seconds: int | None = None

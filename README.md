@@ -3,7 +3,7 @@
 > *An AI-powered living legacy system that preserves how a person thinks, speaks, and loves — so the people who matter most never lose them.*
 
 **Hackathon:** OpenAI Hackathon (Devpost)
-**Stack:** GPT-4o Realtime Audio · Fine-Tuning API · Next.js 14 · FastAPI · Supabase · Pinecone · OpenAI TTS · Redis · librosa · CREPE Pitch Tracking · ElevenLabs Voice Clone · Acoustic Fingerprint Engine
+**Stack:** Gemini Live Audio · Groq persona generation · Next.js 14 · FastAPI · Supabase · Pinecone · Redis · librosa · CREPE Pitch Tracking · ElevenLabs Voice Clone · Acoustic Fingerprint Engine
 
 ---
 
@@ -43,7 +43,7 @@
 
 **Echo** is a consent-first, multimodal AI platform that transforms structured life-narrative sessions into a deeply personal, privately hosted "voice model" of a human being. Unlike a memorial website or a static recording, Echo enables family members to have *new* conversations with a loved one's preserved memory — conversations grounded exclusively in what that person actually shared, recalled in their voice, reasoning style, and emotional cadence.
 
-> **Core Value Proposition:** Echo is the only platform that uses GPT-4o Realtime Audio, fine-tuning, and a consent-governed memory graph to let families continue meaningful conversations with the mind of someone they've lost — not a simulation, but a reflection.
+> **Core Value Proposition:** Echo uses Gemini Live voice sessions, Groq-powered retrieval-grounded persona responses, and a consent-governed memory graph to let families continue meaningful conversations with the mind of someone they've lost — not a simulation, but a reflection.
 
 **Critical ethical differentiator:** Echo never fabricates. If a grandmother never shared a memory about a topic, her Echo responds: *"I don't have a memory of that — I wish I did."* This boundary is technically enforced through RAG-only generation with a strict no-hallucination system prompt, making Echo trustworthy rather than uncanny.
 
@@ -93,8 +93,8 @@
 
 Three converging forces make this the right moment:
 
-1. **GPT-4o native audio** (released mid-2024) is the first model that can conduct an emotionally intelligent spoken interview without a transcription bottleneck, making real-time empathic conversation collection feasible at scale.
-2. **OpenAI's fine-tuning API** now supports conversation-style training on `gpt-4o-mini`, enabling persona distillation from structured memory data.
+1. **Gemini Live** provides low-latency bidirectional audio over WebSockets, so a subject can have a natural spoken interview without exposing a long-lived provider key to the browser.
+2. **Groq-hosted Llama 3.3 70B** produces retrieval-grounded persona responses and structured memory extraction on a configurable developer-tier model.
 3. **Cultural moment** — post-COVID emphasis on digital legacy, combined with growing distrust of "AI ghost" companies that do this without consent, creates an opening for an ethical, subject-first competitor.
 
 > **The competitive gap:** Existing players (HereAfter AI, StoryFile, Eternos) collect video recordings and build chatbots from transcripts. None use live audio AI for collection, none offer fine-tuned persona models, and none have a robust consent architecture. Echo is not a better version of these products — it is a fundamentally different category.
@@ -110,7 +110,7 @@ Echo is composed of four principal layers:
 - **Next.js 14 frontend** with real-time WebSocket connections for audio streaming
 - **FastAPI backend** orchestrating the AI pipeline and business logic
 - **Dual-database layer** — PostgreSQL via Supabase for structured data, Pinecone for vector embeddings
-- **Multi-model AI layer** — GPT-4o Realtime, fine-tuned GPT-4o Mini, OpenAI TTS v2, and Whisper
+- **Multi-model AI layer** — Gemini Live for native session audio and Gemini embeddings; Groq Llama for persona generation, structured extraction, and audio transcription
 
 Redis handles session state and job queuing. All infrastructure is containerized and deployable on Railway or Fly.io within a hackathon window.
 
@@ -123,17 +123,17 @@ Redis handles session state and job queuing. All infrastructure is containerized
 | Frontend Framework | Next.js 14 (App Router) | Server Components reduce client bundle for emotionally sensitive UI. App Router enables streaming SSR for progressive loading. Built-in API routes eliminate a separate BFF layer during hackathon speed constraints. |
 | Frontend Language | TypeScript 5.4 | Type safety across the memory graph schema prevents silent runtime errors in production-critical data paths. Shared types between frontend and FastAPI via `openapi-typescript`. |
 | UI Components | shadcn/ui + Tailwind CSS | shadcn's copy-paste model means zero install overhead for accessible components (dialogs, toasts, sliders). Tailwind prevents style conflicts. The unstyled foundation allows the warm, human aesthetic Echo requires. |
-| Real-time Audio | WebRTC + OpenAI Realtime API | OpenAI's Realtime API (`gpt-4o-realtime-preview`) provides sub-300ms audio round-trips. WebRTC handles browser microphone capture with echo cancellation. No intermediate transcription step required during collection sessions. |
-| Backend Framework | FastAPI (Python 3.12) | Python is the native language for OpenAI SDK, LangChain, and all embedding/fine-tuning tooling. FastAPI's async-first design handles concurrent WebSocket sessions without blocking. Automatic OpenAPI spec generation for frontend type sync. |
+| Real-time Audio | Gemini Live API + WebSocket | The browser streams 16 kHz PCM and receives native audio through Gemini Live. FastAPI mints a constrained, one-use ephemeral token; the Gemini API key never reaches the browser. |
+| Backend Framework | FastAPI (Python 3.12) | FastAPI owns provider credentials, Supabase JWT validation, and the provider-neutral memory pipeline while keeping long-lived keys server-side. |
 | Task Queue | Celery + Redis | Post-session processing (transcription cleanup, memory graph construction, embedding generation, fine-tune job submission) is asynchronous and long-running. Celery with Redis as broker handles this without blocking the API. Redis also stores ephemeral session state. |
 | Primary Database | PostgreSQL via Supabase | Supabase provides row-level security (RLS) out of the box — essential for Echo's consent architecture where subjects control exactly which rows are accessible to which family members. Realtime subscriptions enable live UI updates during session processing. |
 | Vector Database | Pinecone (Serverless) | Memory retrieval during family conversations requires semantic search across hundreds of memory fragments. Pinecone's serverless tier eliminates index management overhead and provides <50ms p99 query latency. Metadata filtering enables consent-aware retrieval by access level. |
 | File Storage | Supabase Storage (S3-compatible) | Audio recordings and processed transcripts are large binary objects. Supabase Storage integrates with RLS policies, so storage access inherits the same consent rules as database rows without duplicate permission logic. |
-| Interview AI | GPT-4o Realtime API (`gpt-4o-realtime-preview`) | Native audio input/output with function calling. The model conducts empathic, probing interviews, detects emotional moments via audio tone, and calls structured extraction functions to tag memories in real time. No other model supports this combination. |
-| Persona Model | Fine-tuned `gpt-4o-mini-2024-07-18` | GPT-4o Mini fine-tuning is cost-effective (training ~$0.008/1K tokens), fast to train (typically 30–90 min on 100 sessions), and produces a persona model that adopts speech patterns, values, and reasoning style from JSONL training data. |
-| Voice Synthesis | OpenAI TTS v2 (`tts-1-hd`) | Used with a fixed voice preset matched to the subject's gender/age during family playback. Paired with the fine-tuned persona model, this produces responses that sound stylistically consistent with the subject. True voice cloning is intentionally deferred for ethical reasons. |
-| Memory Extraction | Whisper API + GPT-4o structured outputs | Post-session, Whisper transcribes raw audio to text. GPT-4o with JSON Schema structured outputs then extracts memory fragments, emotion tags, person references, timestamps, and confidence scores from the transcript. |
-| Embeddings | OpenAI `text-embedding-3-large` | 3072-dimension embeddings provide the highest retrieval precision for nuanced semantic matching. Critical when a family member asks "Did she ever talk about regrets?" — the embedding must surface indirectly-related memories. |
+| Interview AI | Gemini Live (`gemini-3.1-flash-live-preview`) | Native audio input/output over the documented Live WebSocket protocol. The model conducts an empathetic interview while the web app displays input and output transcription. |
+| Persona Model | Groq Llama 3.3 70B (configurable) | Groq streams retrieval-grounded persona answers using `GROQ_PERSONA_MODEL`; the default is `llama-3.3-70b-versatile` and can be changed without code edits. |
+| Voice Synthesis | Gemini Live native audio | Spoken responses are supplied by the Live session. The separate persona conversation endpoint is text streaming, so it does not claim a second TTS provider. |
+| Memory Extraction | Groq transcription + structured Llama output | Groq transcribes uploads with `whisper-large-v3-turbo`; Groq Llama returns JSON memory fragments with emotion tags, people, timestamps, and confidence. |
+| Embeddings | Gemini `gemini-embedding-001` | The embedding service requests 3072 dimensions so the existing Pinecone index contract remains intact. |
 | Auth | Supabase Auth (email/password + Google/GitHub OAuth) | Verified-email signup, password reset, OAuth callback exchange, browser-session refresh, and FastAPI JWT validation. JWTs flow through Supabase RLS and FastAPI middleware. |
 | Deployment | Railway (backend + workers) + Vercel (frontend) | Railway supports persistent WebSocket connections and Celery workers without container orchestration overhead. Vercel's Edge Network provides optimal latency for the Next.js frontend. Both support one-command deploys from GitHub — critical for hackathon iteration speed. |
 | Observability | Langfuse | Langfuse traces every LLM call with input/output logging, latency, cost tracking, and session-level grouping. Essential for debugging prompt failures during a live hackathon demo under pressure. |
@@ -205,7 +205,7 @@ echo/                                    # Monorepo root
 │   │   │   └── ui/                      # shadcn/ui primitives (Button, Dialog, etc.)
 │   │   │
 │   │   ├── hooks/
-│   │   │   ├── useRealtimeSession.ts    # WebSocket lifecycle for GPT-4o Realtime
+│   │   │   ├── useRealtimeSession.ts    # Gemini Live WebSocket lifecycle
 │   │   │   ├── useAudioAmplitude.ts     # Web Audio API amplitude for orb animation
 │   │   │   └── useMemoryGraph.ts        # SWR fetcher + real-time Supabase subscription
 │   │   │
@@ -215,7 +215,7 @@ echo/                                    # Monorepo root
 │   │       └── api.ts                   # Typed FastAPI client (from openapi-typescript)
 │   │
 │   └── api/                             # FastAPI backend
-│       ├── pyproject.toml               # uv-managed deps: fastapi, openai, celery, etc.
+│       ├── pyproject.toml               # FastAPI, Celery, Supabase, Pinecone, and provider-neutral HTTP deps
 │       ├── Dockerfile                   # Multi-stage: builder (uv install) → runtime
 │       │
 │       ├── app/
@@ -227,14 +227,12 @@ echo/                                    # Monorepo root
 │       │   │   ├── memories.py          # CRUD for memory fragments + consent updates
 │       │   │   ├── echo.py              # POST /echo/converse — the family conversation endpoint
 │       │   │   ├── finetune.py          # Trigger + poll fine-tune jobs
-│       │   │   └── webhooks.py          # OpenAI fine-tune completion webhook receiver
 │       │   │
 │       │   ├── services/
-│       │   │   ├── memory_extractor.py  # GPT-4o structured output → MemoryFragment schema
+│       │   │   ├── memory_extractor.py  # Groq JSON output → MemoryFragment schema
 │       │   │   ├── embedding_service.py # Batch embed + upsert to Pinecone
 │       │   │   ├── retrieval_service.py # Consent-aware semantic retrieval from Pinecone
 │       │   │   ├── persona_service.py   # Query fine-tuned model + build response
-│       │   │   ├── tts_service.py       # OpenAI TTS streaming with voice preset selection
 │       │   │   └── finetune_builder.py  # Construct JSONL training file from memory graph
 │       │   │
 │       │   ├── workers/                 # Celery tasks
@@ -274,11 +272,11 @@ echo/                                    # Monorepo root
 
 #### `app/routers/echo.py` — The Core Conversation Endpoint
 
-This is the most complex route. It receives a family member's question, validates their access level against the subject's consent settings, queries Pinecone for relevant memory fragments (filtered by `consent_level IN ['family', 'public']` metadata), constructs a retrieval-augmented prompt for the fine-tuned persona model, streams the text response, and simultaneously pipes it through TTS for audio output. The entire response is streamed back as a `multipart/mixed` response containing both the transcript and audio chunks.
+This route receives a family member's question, validates their access level against the subject's consent settings, queries Pinecone for relevant memory fragments (filtered by `consent_level IN ['family', 'public']` metadata), constructs a retrieval-augmented Groq prompt, and streams the text response with source citations. Live spoken interviews are handled separately by Gemini Live.
 
 #### `app/services/memory_extractor.py` — Structured Memory Extraction
 
-After a session, Whisper produces a raw transcript. This service sends that transcript to GPT-4o with a JSON Schema structured output definition requesting an array of `MemoryFragment` objects. Each fragment contains: `content` (the memory itself), `emotion_tags` (joy, grief, pride, regret, humor), `people_mentioned` (named entities), `time_period` (inferred decade/era), `topics` (family, career, values, place, relationship), and `confidence_score`. This structured extraction is what makes retrieval precise rather than searching raw transcript text.
+After a session, Groq's transcription endpoint produces a raw transcript. `memory_extractor.py` sends that transcript to the configured Groq persona model in JSON mode and validates the resulting `MemoryFragment` objects. Each fragment contains: `content`, `emotion_tags`, `people_mentioned`, `time_period`, `topics`, and `confidence_score`. This structured extraction is what makes retrieval precise rather than searching raw transcript text.
 
 #### `006_rls_policies.sql` — The Consent Enforcement Layer
 
@@ -292,23 +290,23 @@ Row-Level Security policies are the technical backbone of consent. The `memories
 
 **Step 1 — Subject Authentication & Session Initialization**
 
-Subject visits the web app and authenticates with a verified email/password account or a configured Google/GitHub OAuth provider. On session start, the Next.js frontend calls `POST /api/session/token`, which server-side mints an ephemeral OpenAI Realtime client secret (`POST https://api.openai.com/v1/realtime/client_secrets`). This token is returned to the client — the OpenAI API key never leaves the server.
+Subject visits the web app and authenticates with a verified email/password account or a configured Google/GitHub OAuth provider. On session start, the Next.js frontend calls `POST /api/session/token`, which server-side mints a constrained Gemini Live ephemeral token. The browser connects directly to Gemini Live through its WebSocket endpoint; the Gemini API key never leaves the server.
 
 FastAPI simultaneously creates a session record in PostgreSQL: `INSERT INTO sessions (subject_id, started_at, status='active', interview_phase) VALUES (...)`. The session ID is returned and stored in React state.
 
-**Step 2 — WebSocket Connection to GPT-4o Realtime**
+**Step 2 — WebSocket Connection to Gemini Live**
 
-The `useRealtimeSession` hook establishes a WebSocket to `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview` using the ephemeral token. The hook sends a `session.update` event configuring the model with Echo's interviewer system prompt, turn detection settings (server VAD with 800ms silence threshold for elderly subjects who speak slowly), and function definitions for memory tagging.
+The `useRealtimeSession` hook uses Gemini Live's bidirectional WebSocket protocol. The backend is the single source of truth for `GEMINI_LIVE_MODEL`: it creates a one-use token constrained to that model and returns it to the browser, which sends 16kHz PCM microphone frames and receives native audio responses.
 
-The system prompt instructs the model to act as a warm, patient life-narrative interviewer, to use the subject's name, to follow emotional threads rather than following a rigid script, and to call the `tag_memory` function whenever a significant memory is disclosed.
+The system prompt instructs the model to act as a warm, patient life-narrative interviewer and follow emotional threads rather than a rigid script. The app displays Gemini's input/output transcripts; durable memories are created through the authenticated memory API and post-session extraction pipeline.
 
 **Step 3 — Real-Time Audio Capture & Streaming**
 
-The browser's Web Audio API captures microphone input. The `useAudioAmplitude` hook computes RMS amplitude from a `ScriptProcessorNode`, which drives the `AudioOrb` component's CSS animation scale (gentle visual feedback without distraction). PCM audio chunks are encoded and sent to the WebSocket as `input_audio_buffer.append` events. GPT-4o Realtime handles VAD internally — it detects when the subject finishes speaking and begins generating its response.
+The browser's Web Audio API captures microphone input. PCM audio chunks are resampled to 16 kHz, base64 encoded, and sent as Gemini Live `realtimeInput.audio` messages. Gemini returns native PCM audio plus input/output transcriptions over the same WebSocket.
 
-**Step 4 — Real-Time Memory Tagging via Function Calling**
+**Step 4 — Authenticated Memory Capture**
 
-During conversation, GPT-4o Realtime can call the `tag_memory` function with a JSON payload: `{ "content": "...", "emotion": "pride", "topic": "career", "people": ["father"] }`. The frontend receives this as a `response.function_call_arguments.done` event, immediately displays a `MemoryFlash` notification ("A new memory was captured!"), and sends it to FastAPI via a background `POST /memories/draft`. Draft memories are stored with `status='draft'` — they won't enter the embedding pipeline until the session ends and the subject reviews them.
+Typed session notes and post-session uploads are associated with the current Supabase user. The backend applies the same user scope to session, subject, memory, and Pinecone namespace operations; post-session processing turns transcripts into reviewed memory fragments before embedding.
 
 **Step 5 — Session End & Post-Processing Trigger**
 
@@ -316,7 +314,7 @@ When the subject ends the session, the frontend sends `PATCH /sessions/{id}` wit
 
 **Step 6 — Celery Worker: Transcript Cleanup & Deep Memory Extraction**
 
-The worker fetches the raw audio from Supabase Storage and submits it to Whisper API (`POST /v1/audio/transcriptions` with `model=whisper-1`, `response_format=verbose_json`, `timestamp_granularities=['word']`). The verbose JSON response includes word-level timestamps, which are preserved for later attribution. The transcript is then split into semantic segments by topic shift (detected via a lightweight GPT-4o Mini call), and each segment is independently submitted to `memory_extractor.py` using GPT-4o's structured outputs mode with a JSON Schema that enforces the `MemoryFragment` schema. Draft memories from real-time tagging are reconciled and enriched with the deeper post-session extraction.
+The worker fetches raw audio from Supabase Storage and sends it to Groq's transcription endpoint using `whisper-large-v3-turbo`. It then submits the transcript to `memory_extractor.py`, which uses the configured Groq model in JSON mode and validates the result against the `MemoryFragment` schema.
 
 **Step 7 — Embedding & Pinecone Upsert**
 
@@ -324,25 +322,25 @@ Each extracted `MemoryFragment` is serialized as a rich text string:
 ```
 [MEMORY] {content} [EMOTION] {emotion_tags} [TOPICS] {topics} [PEOPLE] {people_mentioned} [ERA] {time_period}
 ```
-This format ensures the embedding captures all semantic dimensions. Batches of 100 fragments are submitted to `text-embedding-3-large`. The resulting 3072-dim vectors are upserted to Pinecone with metadata: `{ subject_id, memory_id, consent_level, session_id, emotion_tags[], topics[], confidence_score }`. The `consent_level` metadata field is what makes retrieval consent-aware.
+This format ensures the embedding captures all semantic dimensions. Batches are submitted to Gemini `gemini-embedding-001` with 3072 output dimensions. The resulting vectors are upserted to Pinecone with metadata: `{ subject_id, memory_id, consent_level, session_id, emotion_tags[], topics[], confidence_score }`. The `consent_level` metadata field is what makes retrieval consent-aware.
 
 ---
 
 ### Phase 2 — Backend & AI Logic: The Family Conversation Pipeline
 
-**Step 1 — Fine-Tuning: Building the Persona Model**
+**Step 1 — Persona Dataset: Building Evaluation Pairs**
 
 Once a subject has completed 3+ sessions (~150+ memory fragments), the `finetune_builder.py` service generates a JSONL training file. Each training example is a `{"messages": [...]}` object where the system message sets the persona context, the user message is a plausible question a family member might ask, and the assistant message is a response written in the subject's voice — synthesized from their actual memory fragments, speech patterns extracted from transcripts (filler words, sentence rhythm, vocabulary level), and values identified across sessions.
 
-The JSONL file is uploaded to OpenAI Files API, then a fine-tuning job is created: `POST /v1/fine_tuning/jobs` with `model=gpt-4o-mini-2024-07-18`. A webhook on `/webhooks/finetune_complete` receives the completion event and updates the `echo_profiles` table with the new `fine_tuned_model` ID.
+Groq does not offer a hosted fine-tuning equivalent in this architecture. Echo retains the consent-scoped JSONL as an evaluation/persona dataset and uses retrieval-grounded Groq generation instead of uploading private memories to a third-party fine-tuning job.
 
 **Step 2 — Family Member Query Reception & Authorization**
 
-A family member's question arrives at `POST /echo/{echo_id}/converse` as either a text string or a base64-encoded audio blob. FastAPI validates the JWT, checks the `legacy_contacts` table to verify the user has approved access to this Echo profile, and determines their access level (`family` or `public`). If audio, it's immediately transcribed via Whisper before the pipeline continues.
+A family member's question arrives at `POST /echo/{echo_id}/converse` as text or an audio blob. FastAPI validates the JWT, checks the `legacy_contacts` table to verify approved access, and determines the access level (`family` or `public`). Audio is transcribed through Groq before the pipeline continues.
 
 **Step 3 — Consent-Aware Semantic Retrieval**
 
-The query is embedded with `text-embedding-3-large`. `retrieval_service.py` queries Pinecone with: the query vector, `top_k=12`, and a metadata filter:
+The query is embedded with `gemini-embedding-001`. `retrieval_service.py` queries Pinecone with: the query vector, `top_k=12`, and a metadata filter:
 ```json
 {"$and": [{"subject_id": {"$eq": subject_id}}, {"consent_level": {"$in": allowed_levels}}]}
 ```
@@ -350,16 +348,16 @@ The top results are ranked by a reciprocal rank fusion of vector similarity scor
 
 **Step 4 — Persona Model Prompt Construction**
 
-The retrieval results are formatted into a structured context block injected into the fine-tuned model's system prompt. The prompt has three layers:
+The retrieval results are formatted into a structured context block injected into the configured Groq model's system prompt. The prompt has three layers:
 1. A static persona anchor describing the subject's name, age, speech style, and core values
 2. The dynamic retrieval block with the top memory fragments labeled as `[MEMORY {n}]`
 3. A strict behavioral instruction: *"You may only draw on the memories provided above. If the question cannot be answered from these memories, say so warmly and specifically — do not invent details. Never speculate about events not captured in your memories."*
 
-The fine-tuned model then generates a response that sounds like the subject while being constrained to factual recall.
+The Groq persona model then generates a response that sounds like the subject while being constrained to factual recall.
 
-**Step 5 — Streaming Response & TTS Pipeline**
+**Step 5 — Streaming Persona Response**
 
-The persona model's text response is streamed token-by-token. Simultaneously, complete sentences (detected by punctuation) are piped to `tts_service.py`, which calls `POST /v1/audio/speech` with `model=tts-1-hd`, the subject's assigned voice preset, and the sentence text. TTS audio chunks arrive within ~800ms of each complete sentence, creating a near-real-time spoken response experience. Both the text stream and audio chunks are returned to the client as a Server-Sent Events stream, enabling the `EchoResponse` component to simultaneously display the transcript and play the audio.
+The Groq persona response is streamed token-by-token as Server-Sent Events with its memory citations. Spoken conversations use the Gemini Live session rather than a separate TTS path.
 
 **Step 6 — Conversation Logging & Attribution**
 
@@ -396,7 +394,7 @@ The goal of a hackathon demo is not to show features — it is to create an emot
 #### Wow Factor 01 — The Live Interview Demo
 **Show the AI actually interviewing a real person, on screen, in real time**
 
-Open the demo with the presenter's own grandmother (or a stand-in) on screen. GPT-4o Realtime Audio conducts a 90-second interview: it asks a warm opening question, responds empathically to her answer, and probes deeper. Judges see the transcript appearing in real time, emotion badges appearing beside phrases ("💛 pride"), and MemoryFlash cards sliding in as memories are captured. No other team at the hackathon will have a live, emotionally intelligent AI interview running during their demo. This is the most visible use of the Realtime API in a non-productivity context — judges will have seen 50 productivity tools; they will not have seen this.
+Open the demo with the presenter's own grandmother (or a stand-in) on screen. Gemini Live conducts a 90-second interview: it asks a warm opening question, responds empathically to her answer, and probes deeper. Judges see the transcript appearing in real time. The browser uses only a constrained ephemeral credential, not a long-lived key.
 
 #### Wow Factor 02 — The Memory Graph Reveal
 **A visual constellation of a person's inner life**
@@ -425,7 +423,7 @@ The `seed_demo.py` script populates a demo subject ("Eleanor, 74") with 87 pre-b
 | Time | Beat | Action |
 |------|------|--------|
 | 0:00 – 0:20 | **The hook** | *"67% of adults say they regret not asking a deceased parent more questions. Echo solves this — before it's too late."* |
-| 0:20 – 1:15 | **Live interview** | Show GPT-4o Realtime conducting a real 55-second interview. Transcript streaming, emotion badges, MemoryFlash cards appearing. |
+| 0:20 – 1:15 | **Live interview** | Show Gemini Live conducting a real 55-second interview with transcript streaming. |
 | 1:15 – 1:40 | **Memory graph** | *"Here's what 3 sessions produces."* Show the D3 constellation. Click one node. Read the memory. Show consent toggle. |
 | 1:40 – 2:30 | **The family conversation** | Ask the emotional question. Play Echo's response with voice. Expand the sources accordion. Let the silence sit. |
 | 2:30 – 2:50 | **The ethical boundary** | Ask the unknowable question. Show Echo's graceful refusal. *"This is what makes Echo trustworthy, not just powerful."* |
@@ -450,7 +448,7 @@ Current TTS systems reproduce *what* a voice sounds like in a neutral state. The
 | 🫁 | **Paralinguistic Texture** | Pyannote · spectral flatness | Breathiness, vocal fry, nasality, and the sound of thinking — the micro-textures that make a voice feel human rather than synthesised. Captured via spectral flatness and harmonic-to-noise ratio analysis per utterance. |
 | ⏱️ | **Temporal Dynamics** | WebRTC VAD · silence detection | Speech rate, pause duration before emotional responses, how long silences last when someone is thinking, acceleration when excited. These rhythms are as identifying as a fingerprint and almost entirely absent from current voice clones. |
 | 📢 | **Loudness & Dynamics** | RMS energy · dynamic range | How loud someone naturally speaks, how much they vary their volume, whether they get quieter when saying something vulnerable or louder when telling a story. Captured as per-utterance RMS energy distributions with emotional context tags. |
-| 🗣️ | **Lexical & Prosodic Habits** | GPT-4o · word frequency analysis | Which words are overused ("you know," "sort of," "exactly"), characteristic sentence openers, filler patterns, and where stress falls — the verbal fingerprint that exists in the language model layer but must sync with the audio layer to feel real. |
+| 🗣️ | **Lexical & Prosodic Habits** | Groq Llama · word frequency analysis | Which words are overused ("you know," "sort of," "exactly"), characteristic sentence openers, filler patterns, and where stress falls — the verbal fingerprint that exists in the language model layer but must sync with the audio layer to feel real. |
 
 ---
 
@@ -471,7 +469,7 @@ Current TTS systems reproduce *what* a voice sounds like in a neutral state. The
 
 **Step 1 — Diarization: Isolating the Subject's Voice**
 
-Raw session audio contains both the AI interviewer (GPT-4o Realtime output) and the subject. Before any analysis, Pyannote Audio's speaker diarization model (`pyannote/speaker-diarization-3.1`) segments the audio by speaker. Only segments attributed to the subject are forwarded to the feature extraction pipeline. This ensures the voice profile is built purely from the human, not contaminated by the AI's TTS audio.
+Raw session audio contains both the AI interviewer (Gemini Live output) and the subject. Before any analysis, Pyannote Audio's speaker diarization model (`pyannote/speaker-diarization-3.1`) segments the audio by speaker. Only segments attributed to the subject are forwarded to the feature extraction pipeline. This ensures the voice profile is built purely from the human, not contaminated by AI audio.
 
 **Step 2 — MFCC Extraction: The Spectral Fingerprint**
 
@@ -497,7 +495,7 @@ Once 30+ minutes of clean subject audio is accumulated (typically after 2–3 se
 
 **Step 6 — Emotion-Conditioned Synthesis at Response Time**
 
-When the fine-tuned persona model generates a response text, the `tts_service.py` enriches the synthesis request with voice settings derived from the fingerprint. For ElevenLabs this means setting:
+When a future external voice-cloning integration generates a response from the Groq persona model, it must apply voice settings derived from the fingerprint. For ElevenLabs this means setting:
 - `stability` — inverse of the subject's measured F0 standard deviation (more variable speakers get lower stability)
 - `similarity_boost` — set to 0.85+ for the professional clone
 - `style` — derived from the emotional tag on the retrieved memory (grief responses get higher style for slower delivery, humor responses get lower for faster)
@@ -514,7 +512,7 @@ The long-term target replaces the ElevenLabs dependency with a fully in-house ne
 
 | Phase | Timeline | Approach | Cost |
 |-------|----------|----------|------|
-| **Phase 1 — TTS with Voice Preset** | Available at launch | OpenAI TTS `tts-1-hd` with a preset voice selected at onboarding. Subject picks from 6 voice options closest to their own. No audio analysis required — works from session 1. | 0 extra cost |
+| **Phase 1 — Live Interview Voice** | Available at launch | Gemini Live provides native session audio through a constrained ephemeral token. No audio analysis is required. | Provider free/developer tier subject to quota |
 | **Phase 2 — ElevenLabs Professional Voice Clone** | 3–6 months | Spectral + prosodic fingerprint extraction via librosa + CREPE. ElevenLabs Pro Clone trained on clean session audio. Emotion-conditioned synthesis settings per response. Subject must provide explicit voice clone consent separate from memory consent. | ~$5/subject training cost (after 30+ min of audio) |
 | **Phase 3 — Full Acoustic Fingerprint Neural TTS** | 12–18 months | All 6 acoustic dimensions captured and stored as fingerprint vector. VALL-E / VoiceBox-style neural codec model conditioned on fingerprint. Emotional register modulation. Characteristic filler words and hesitation sounds reproduced. Full local model — no third-party voice API dependency. | After 90+ min of audio |
 
@@ -579,7 +577,7 @@ This makes it structurally impossible to store a voice ID without a consent time
 
 ---
 
-*Echo — Full Product Blueprint · Built for OpenAI Hackathon · All systems: Next.js 14 · FastAPI · Supabase · Pinecone · GPT-4o Realtime · Fine-Tuning API · OpenAI TTS · librosa · CREPE · ElevenLabs Pro Clone · Pyannote*
+*Echo — Full Product Blueprint · Built for OpenAI Hackathon · All systems: Next.js 14 · FastAPI · Supabase · Pinecone · Gemini Live · Groq Llama · Gemini embeddings · librosa · CREPE · ElevenLabs Pro Clone · Pyannote*
 
 ---
 
@@ -592,7 +590,7 @@ The FastAPI backend and Celery workers are containerised using Nixpacks.
 1. Connect your GitHub repository to Railway.
 2. Railway will automatically detect the `apps/api/railway.toml` and configure the Web and Worker services.
 3. Configure the following environment variables in Railway:
-   - `OPENAI_API_KEY`, `PINECONE_API_KEY`, `PINECONE_INDEX`
+   - `GEMINI_API_KEY`, `GROQ_API_KEY`, `PINECONE_API_KEY`, `PINECONE_INDEX`
    - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`
    - `DATABASE_URL` (Auto-provisioned if using Railway PostgreSQL, or use Supabase pooling URL)
    - `REDIS_URL` (Auto-provisioned if using Railway Redis)
