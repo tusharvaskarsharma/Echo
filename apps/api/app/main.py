@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from .config import get_settings
 
-from .routers import sessions, memories, echo, finetune, auth, realtime
+from .routers import sessions, memories, echo, finetune, auth, realtime, mind
 from .db.client import db_client
 from .auth.middleware import AuthMiddleware
 
@@ -80,6 +80,7 @@ app.include_router(memories.router)
 app.include_router(echo.router)
 app.include_router(finetune.router)
 app.include_router(realtime.router)
+app.include_router(mind.router)
 
 # Wrap the complete application rather than adding CORS inside the middleware
 # stack.  This ensures CORS headers are also present on error responses

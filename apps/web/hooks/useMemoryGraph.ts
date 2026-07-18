@@ -24,6 +24,11 @@ export interface Memory {
   consent_level: 'private' | 'family' | 'legacy';
   confidence_score: number;
   session_id: string;
+  search_document?: string | null;
+  semantic_metadata?: {
+    title?: string;
+    keywords?: string[];
+  };
 }
 
 export function useMemoryGraph() {
