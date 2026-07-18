@@ -34,6 +34,9 @@
    - [New Files & Services Required for Voice](#65-new-files--services-required-for-voice)
    - [New Tech Stack Additions for Voice](#66-new-tech-stack-additions-for-voice)
    - [The Consent Architecture for Voice Cloning](#67-the-consent-architecture-for-voice-cloning)
+7. [Deployment Instructions](#7-deployment-instructions)
+8. [Mind Model Architecture](#8-mind-model-architecture)
+9. [Cognitive Engine Architecture](#9-cognitive-engine-architecture)
 
 ---
 
@@ -105,12 +108,14 @@ Three converging forces make this the right moment:
 
 ### 2.1 Architecture Overview
 
-Echo is composed of four principal layers:
+Echo is composed of six principal layers:
 
 - **Next.js 14 frontend** with real-time WebSocket connections for audio streaming
 - **FastAPI backend** orchestrating the AI pipeline and business logic
 - **Dual-database layer** — PostgreSQL via Supabase for structured data, Pinecone for vector embeddings
 - **Multi-model AI layer** — Gemini Live for native session audio and Gemini embeddings; Groq Llama for persona generation, structured extraction, and audio transcription
+- **Mind Model layer** — a consent-gated, evidence-linked cognitive model of values, reasoning, emotions, communication, and evolving life principles. It augments retrieval; it never substitutes unsupported traits for source memories.
+- **Cognitive Engine layer** — an intent-aware, relationship- and time-sensitive answer-planning layer that creates a bounded evidence ledger before persona generation. It never stores or exposes chain-of-thought.
 
 Redis handles session state and job queuing. All infrastructure is containerized and deployable on Railway or Fly.io within a hackathon window.
 
@@ -605,3 +610,35 @@ The Next.js 14 frontend is pre-configured for Vercel deployment.
    - `NEXT_PUBLIC_API_BASE_URL` (Set to your Railway backend URL, e.g., `https://echo-api.up.railway.app`)
    - `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (the public Supabase browser configuration)
 4. Vercel will automatically build and deploy using `pnpm`.
+
+---
+
+## 8. Mind Model Architecture
+
+ECHO's Mind Model is an additive, consent-first cognitive layer over the existing Memory Graph and Pinecone RAG pipeline. It continuously turns reviewed interview evidence into **candidate** beliefs, values, reasoning patterns, emotional responses, communication style, wisdom principles, and time-bounded personality changes. It does not infer a trait without traceable evidence and it does not replace factual memory retrieval.
+
+Every Mind Model trait has evidence memories, confidence, first observed, last updated, and supporting-conversation counts. Traits below the configured threshold cannot influence a response. If no adequately supported evidence is available, Echo must say: *"I don't know enough about how they would think about this."*
+
+The family conversation flow is therefore:
+
+```text
+Question -> consent-aware memory retrieval -> active Mind Model retrieval
+-> cognitive context assembly -> grounded Groq response -> citations + confidence -> voice output
+```
+
+The complete production blueprint, schema, RLS model, confidence policy, cognitive interview mode, prompt contract, API design, frontend experience, and delivery sequence are documented in [Mind Model Architecture](docs/mind-model-architecture.md). The executable database schema is [012_mind_model.sql](apps/api/app/db/migrations/012_mind_model.sql).
+
+---
+
+## 9. Cognitive Engine Architecture
+
+The Cognitive Engine adds a deliberate planning stage before ECHO generates an answer. It classifies intent, retrieves consent-eligible source memories, active Mind Model traits, relationship context, and the correct timeline version; it then creates a bounded answer plan with confidence and conflict state. The model generates language only from that plan and its cited evidence.
+
+```text
+Question -> intent -> memory + Mind Model + relationship + timeline retrieval
+-> internal evidence ledger -> answer plan -> grounded response -> voice output
+```
+
+Internal deliberation and provider chain-of-thought are never exposed or persisted. The explainability response instead returns memory ids, Mind Model/value/policy ids, confidence, relationship context, timeline version, and conflict summary. Below-threshold evidence returns: *"I don't know enough about how they would think about this."*
+
+See [Cognitive Engine Architecture](docs/cognitive-engine-architecture.md) for intent-specific pipelines, backend service design, conflict and uncertainty policy, API contracts, Cognitive Debug View, deployment stages, and acceptance criteria. The executable schema is [013_cognitive_engine.sql](apps/api/app/db/migrations/013_cognitive_engine.sql).
