@@ -283,7 +283,7 @@ This route receives a family member's question, validates their access level aga
 
 #### `app/services/memory_extractor.py` — Structured Memory Extraction
 
-After a session, Groq's transcription endpoint produces a raw transcript. `memory_extractor.py` sends that transcript to the configured Groq persona model in JSON mode and validates the resulting `MemoryFragment` objects. Each fragment contains: `content`, `emotion_tags`, `people_mentioned`, `time_period`, `topics`, and `confidence_score`. This structured extraction is what makes retrieval precise rather than searching raw transcript text.
+After a session, Groq's transcription endpoint produces a raw transcript. `memory_extractor.py` sends the complete transcript to the configured Groq model in JSON mode and rejects any response that does not meet the evidence-only semantic-memory contract. The persisted record contains a concise display summary plus structured facts, preferences, people, places, topics, keywords, emotion, intent, memory type, and importance in `semantic_metadata`. `search_document` is the exact natural-language text sent to Gemini embeddings; no timestamps, speaker labels, JSON syntax, or unsupported inferences are embedded. This structured extraction makes retrieval precise without treating a raw transcript as a durable memory.
 
 #### `006_rls_policies.sql` — The Consent Enforcement Layer
 

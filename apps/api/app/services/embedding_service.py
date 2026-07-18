@@ -16,6 +16,10 @@ class EmbeddingService:
         self.settings = get_settings()
 
     def serialize_memory(self, memory: MemoryFragment) -> str:
+        # The semantic processor deliberately provides the sole embedding text.
+        # Never decorate it with source labels or unrelated database fields.
+        if memory.search_document:
+            return memory.search_document
         topics = ", ".join(memory.topics) if memory.topics else "None"
         people = ", ".join(memory.people_mentioned) if memory.people_mentioned else "None"
         emotions = ", ".join(memory.emotion_tags) if memory.emotion_tags else "None"

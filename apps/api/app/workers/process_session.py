@@ -100,7 +100,9 @@ async def _process_session_async(session_id: str):
                 people_mentioned=em.people_mentioned,
                 time_period=em.time_period,
                 confidence_score=em.confidence_score,
-                created_at=now
+                created_at=now,
+                search_document=em.search_document,
+                semantic_metadata=em.semantic_metadata,
             )
             memories_to_insert.append(mem)
             await repositories.create_memory(conn, mem, user_id)
@@ -134,6 +136,11 @@ async def _process_session_async(session_id: str):
                     "confidence_score": m.confidence_score,
                     "time_period": m.time_period or "",
                     "content": m.content,
+                    "title": m.semantic_metadata.get("title", ""),
+                    "keywords": m.semantic_metadata.get("keywords", []),
+                    "intent": m.semantic_metadata.get("intent", ""),
+                    "memory_type": m.semantic_metadata.get("memory_type", ""),
+                    "importance_score": m.semantic_metadata.get("importance_score", 0),
                 }
             })
             

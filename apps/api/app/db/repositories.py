@@ -85,15 +85,16 @@ async def create_memory(conn: asyncpg.Connection, memory: MemoryFragment, user_i
     if not owner_id:
         raise ValueError("Cannot create a memory without an owning user")
     query = """
-    INSERT INTO memories (id, session_id, subject_id, user_id, content, emotion_tags, topics, people_mentioned, consent_level, confidence_score, time_period)
-    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, $11)
+    INSERT INTO memories (id, session_id, subject_id, user_id, content, emotion_tags, topics, people_mentioned, consent_level, confidence_score, time_period, search_document, semantic_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13::jsonb)
     RETURNING *
     """
     row = await conn.fetchrow(
         query, 
         memory.id, memory.session_id, memory.subject_id, owner_id, memory.content,
         json.dumps(memory.emotion_tags), json.dumps(memory.topics),
-        json.dumps(memory.people_mentioned), memory.consent_level, memory.confidence_score, memory.time_period
+        json.dumps(memory.people_mentioned), memory.consent_level, memory.confidence_score, memory.time_period,
+        memory.search_document, json.dumps(memory.semantic_metadata),
     )
     if row:
         row_dict = dict(row)
@@ -101,6 +102,7 @@ async def create_memory(conn: asyncpg.Connection, memory: MemoryFragment, user_i
         row_dict['emotion_tags'] = json.loads(row_dict['emotion_tags']) if isinstance(row_dict['emotion_tags'], str) else row_dict['emotion_tags']
         row_dict['topics'] = json.loads(row_dict['topics']) if isinstance(row_dict['topics'], str) else row_dict['topics']
         row_dict['people_mentioned'] = json.loads(row_dict['people_mentioned']) if isinstance(row_dict['people_mentioned'], str) else row_dict['people_mentioned']
+        row_dict['semantic_metadata'] = json.loads(row_dict['semantic_metadata']) if isinstance(row_dict.get('semantic_metadata'), str) else row_dict.get('semantic_metadata') or {}
         return MemoryFragment(**row_dict)
     return None
 
@@ -111,6 +113,7 @@ async def get_memory(conn: asyncpg.Connection, memory_id: UUID | str, user_id: U
         row_dict['emotion_tags'] = json.loads(row_dict['emotion_tags']) if isinstance(row_dict['emotion_tags'], str) else row_dict['emotion_tags']
         row_dict['topics'] = json.loads(row_dict['topics']) if isinstance(row_dict['topics'], str) else row_dict['topics']
         row_dict['people_mentioned'] = json.loads(row_dict['people_mentioned']) if isinstance(row_dict['people_mentioned'], str) else row_dict['people_mentioned']
+        row_dict['semantic_metadata'] = json.loads(row_dict['semantic_metadata']) if isinstance(row_dict.get('semantic_metadata'), str) else row_dict.get('semantic_metadata') or {}
         return MemoryFragment(**row_dict)
     return None
 
@@ -139,6 +142,7 @@ async def list_memories(conn: asyncpg.Connection, user_id: UUID | str) -> List[M
         row_dict['emotion_tags'] = json.loads(row_dict['emotion_tags']) if isinstance(row_dict['emotion_tags'], str) else row_dict['emotion_tags']
         row_dict['topics'] = json.loads(row_dict['topics']) if isinstance(row_dict['topics'], str) else row_dict['topics']
         row_dict['people_mentioned'] = json.loads(row_dict['people_mentioned']) if isinstance(row_dict['people_mentioned'], str) else row_dict['people_mentioned']
+        row_dict['semantic_metadata'] = json.loads(row_dict['semantic_metadata']) if isinstance(row_dict.get('semantic_metadata'), str) else row_dict.get('semantic_metadata') or {}
         memories.append(MemoryFragment(**row_dict))
     return memories
 
@@ -162,6 +166,7 @@ async def update_memory(conn: asyncpg.Connection, memory_id: UUID | str, user_id
         row_dict['emotion_tags'] = json.loads(row_dict['emotion_tags']) if isinstance(row_dict['emotion_tags'], str) else row_dict['emotion_tags']
         row_dict['topics'] = json.loads(row_dict['topics']) if isinstance(row_dict['topics'], str) else row_dict['topics']
         row_dict['people_mentioned'] = json.loads(row_dict['people_mentioned']) if isinstance(row_dict['people_mentioned'], str) else row_dict['people_mentioned']
+        row_dict['semantic_metadata'] = json.loads(row_dict['semantic_metadata']) if isinstance(row_dict.get('semantic_metadata'), str) else row_dict.get('semantic_metadata') or {}
         return MemoryFragment(**row_dict)
     return None
 

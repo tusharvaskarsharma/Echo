@@ -35,8 +35,13 @@ async def _index_memory_async(memory_payload: dict, user_id: str) -> None:
             "emotion_tags": memory.emotion_tags,
             "topics": memory.topics,
             "confidence_score": memory.confidence_score,
-            "time_period": memory.time_period or "",
-            "content": memory.content,
+                    "time_period": memory.time_period or "",
+                    "content": memory.content,
+                    "title": memory.semantic_metadata.get("title", ""),
+                    "keywords": memory.semantic_metadata.get("keywords", []),
+                    "intent": memory.semantic_metadata.get("intent", ""),
+                    "memory_type": memory.semantic_metadata.get("memory_type", ""),
+                    "importance_score": memory.semantic_metadata.get("importance_score", 0),
         },
     }])
     logger.info("Indexed memory %s in Pinecone namespace %s", memory.id, memory.subject_id)
