@@ -75,6 +75,10 @@ def _run_task_sync(task_name: str, *args, **kwargs):
         from app.workers.sync_consent import _sync_memory_consent_async
         _run_async(_sync_memory_consent_async(*args, **kwargs))
 
+    elif task_name == "index_memory":
+        from app.workers.index_memory import _index_memory_async
+        _run_async(_index_memory_async(*args, **kwargs))
+
     else:
         raise ValueError(f"Unknown task: {task_name}")
 
@@ -92,6 +96,10 @@ def _run_task_celery(task_name: str, *args, **kwargs):
     elif task_name == "sync_memory_consent":
         from app.workers.sync_consent import sync_memory_consent
         sync_memory_consent.delay(*args, **kwargs)
+
+    elif task_name == "index_memory":
+        from app.workers.index_memory import index_memory
+        index_memory.delay(*args, **kwargs)
 
     else:
         raise ValueError(f"Unknown task: {task_name}")

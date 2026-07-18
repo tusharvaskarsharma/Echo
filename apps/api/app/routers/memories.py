@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Annotated, List
 import asyncpg
+import logging
 
 from app.auth.dependencies import require_subject
 from app.db.client import get_db, get_optional_db
@@ -18,6 +19,55 @@ router = APIRouter(
     dependencies=[Depends(require_subject)]
 )
 
+logger = logging.getLogger(__name__)
+
+
+async def _import_fallback_memories(
+    conn: asyncpg.Connection, user: dict,
+) -> None:
+    """Move pre-database fallback records into the authoritative tables.
+
+    Earlier local runs could save an otherwise valid memory to private
+    Supabase Storage while PostgreSQL was unreachable.  Once a database
+    connection is restored, importing those records here preserves their
+    original memory IDs and lets the normal idempotent Pinecone upsert index
+    them.  A failed import must never make a user's memory list unavailable.
+    """
+    user_id = str(user["sub"])
+    try:
+        fallback_memories = await MemoryStorageService().list_memories(user_id)
+    except Exception:
+        logger.exception("Unable to read fallback memories for user %s", user_id)
+        return
+
+    if not fallback_memories:
+        return
+
+    session_service = SessionService(conn, user_id, user.get("email"))
+    for fallback_memory in fallback_memories:
+        if await repositories.get_memory(conn, fallback_memory.id, user_id):
+            continue
+        try:
+            # A legacy storage record has no relational session.  Create an
+            # owned completed session before importing it to satisfy the FK.
+            session = await session_service.create_session(SessionCreate())
+            # This historical record has no audio to process, so mark its
+            # session complete without scheduling the audio post-processor.
+            await conn.execute(
+                "UPDATE sessions SET status = $1, ended_at = NOW() WHERE id = $2 AND user_id = $3",
+                SessionStatus.COMPLETED, session.id, user_id,
+            )
+            imported = fallback_memory.model_copy(
+                update={"session_id": session.id, "subject_id": user_id}
+            )
+            saved = await repositories.create_memory(conn, imported, user_id)
+            run_task("index_memory", saved.model_dump(mode="json"), user_id)
+            logger.info("Imported fallback memory %s for user %s", saved.id, user_id)
+        except Exception:
+            # Continue with other records; re-running the list endpoint safely
+            # retries an import because the original fallback object remains.
+            logger.exception("Unable to import fallback memory %s", fallback_memory.id)
+
 @router.post("/conversation", response_model=MemoryFragment, status_code=201)
 async def save_conversation_memory(
     conversation: ConversationMemoryCreate,
@@ -27,7 +77,9 @@ async def save_conversation_memory(
     """Save a completed transcript as a private memory owned by the caller."""
     user_id = str(user["sub"])
     if conn is None:
-        return await MemoryStorageService().save_conversation(user_id, conversation.content)
+        saved = await MemoryStorageService().save_conversation(user_id, conversation.content)
+        run_task("index_memory", saved.model_dump(mode="json"), user_id)
+        return saved
 
     service = SessionService(conn, user_id, user.get("email"))
     session = await service.create_session(SessionCreate())
@@ -37,6 +89,7 @@ async def save_conversation_memory(
         people_mentioned=[], consent_level=ConsentLevel.PRIVATE, confidence_score=0.7,
     )
     saved = await repositories.create_memory(conn, memory, user_id)
+    run_task("index_memory", saved.model_dump(mode="json"), user_id)
     await service.update_session(str(session.id), SessionUpdate(status=SessionStatus.COMPLETED))
     return saved
 
@@ -55,7 +108,9 @@ async def create_draft_memory(
         people_mentioned=draft.people, consent_level=ConsentLevel.PRIVATE,
         confidence_score=0.7,
     )
-    return await repositories.create_memory(conn, memory, user["sub"])
+    saved = await repositories.create_memory(conn, memory, user["sub"])
+    run_task("index_memory", saved.model_dump(mode="json"), str(user["sub"]))
+    return saved
 
 @router.get("", response_model=List[MemoryFragment])
 async def list_memories(
@@ -63,7 +118,18 @@ async def list_memories(
     conn: Annotated[asyncpg.Connection | None, Depends(get_optional_db)]
 ):
     if conn is None:
-        return await MemoryStorageService().list_memories(str(user["sub"]))
+        user_id = str(user["sub"])
+        memories = await MemoryStorageService().list_memories(user_id)
+        # Backfill records created while direct PostgreSQL was unavailable.
+        # Pinecone upserts are idempotent, so repeat reads cannot duplicate a
+        # vector and the response stays independent of provider latency.
+        for memory in memories:
+            run_task("index_memory", memory.model_dump(mode="json"), user_id)
+        return memories
+    # Import records saved while the old database connection was unavailable.
+    # This is safe on every request because imports preserve memory IDs and the
+    # database primary key prevents duplicates.
+    await _import_fallback_memories(conn, user)
     subject_id = user.get("sub")
     memories = await repositories.list_memories(conn, subject_id)
     return memories
@@ -78,7 +144,11 @@ async def update_memory_consent(
     subject_id = user.get("sub")
     if conn is None:
         try:
-            return await MemoryStorageService().update_consent(str(subject_id), memory_id, patch.consent_level)
+            updated = await MemoryStorageService().update_consent(str(subject_id), memory_id, patch.consent_level)
+            # Re-upsert the same vector id so fallback storage changes reach
+            # Pinecone even without a direct PostgreSQL connection.
+            run_task("index_memory", updated.model_dump(mode="json"), str(subject_id))
+            return updated
         except ValueError as error:
             raise HTTPException(status_code=404, detail="Memory not found") from error
     
