@@ -4,9 +4,10 @@ import { motion } from "framer-motion";
 
 interface AudioOrbProps {
   state: "disconnected" | "idle" | "listening" | "speaking";
+  compact?: boolean;
 }
 
-export const AudioOrb = ({ state }: AudioOrbProps) => {
+export const AudioOrb = ({ state, compact = false }: AudioOrbProps) => {
   const getVariants = (): any => {
     switch (state) {
       case "listening":
@@ -49,10 +50,10 @@ export const AudioOrb = ({ state }: AudioOrbProps) => {
   };
 
   return (
-    <div className="flex items-center justify-center h-64 w-64 md:h-80 md:w-80">
+    <div className={`flex items-center justify-center ${compact ? "h-40 w-40 sm:h-48 sm:w-48" : "h-64 w-64 md:h-80 md:w-80"}`}>
       <motion.div
         animate={getVariants()}
-        className="w-48 h-48 md:w-64 md:h-64 rounded-full border border-white/40"
+        className={`${compact ? "h-32 w-32 sm:h-40 sm:w-40" : "h-48 w-48 md:h-64 md:w-64"} rounded-full border border-white/40`}
       />
     </div>
   );

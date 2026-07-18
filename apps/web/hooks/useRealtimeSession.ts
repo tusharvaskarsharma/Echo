@@ -6,6 +6,12 @@ const GEMINI_LIVE_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.ge
 const INPUT_SAMPLE_RATE = 16_000;
 const OUTPUT_SAMPLE_RATE = 24_000;
 
+export type ConversationMessage = {
+  id: string;
+  speaker: "echo" | "user";
+  text: string;
+};
+
 function bytesToBase64(bytes: Uint8Array) {
   let binary = "";
   for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
@@ -36,7 +42,7 @@ export function useRealtimeSession() {
   const [isConnected, setIsConnected] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [transcript, setTranscript] = useState("");
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -47,6 +53,19 @@ export function useRealtimeSession() {
   const mutedGainRef = useRef<GainNode | null>(null);
   const nextAudioTimeRef = useRef(0);
   const connectedRef = useRef(false);
+
+  const addTranscriptMessage = useCallback((speaker: ConversationMessage["speaker"], text: string) => {
+    const cleanText = text.trim();
+    if (!cleanText) return;
+    setMessages((previous) => {
+      const last = previous.at(-1);
+      if (last?.speaker === speaker) {
+        return [...previous.slice(0, -1), { ...last, text: `${last.text}${last.text.endsWith(" ") ? "" : " "}${cleanText}` }];
+      }
+      return [...previous, { id: `${speaker}-${Date.now()}-${Math.random().toString(36).slice(2)}`, speaker, text: cleanText }];
+    });
+    setTranscript((previous) => `${previous}${previous ? "\n" : ""}${speaker === "echo" ? "Echo" : "You"}: ${cleanText}`);
+  }, []);
 
   const cleanup = useCallback(() => {
     socketRef.current?.close(); socketRef.current = null;
@@ -105,12 +124,11 @@ export function useRealtimeSession() {
               ? new TextDecoder().decode(event.data)
               : String(event.data);
           const message = JSON.parse(raw);
-          setMessages((previous) => [...previous, message]);
           if (message.error) { setError(message.error.message || "Gemini Live returned an error."); return; }
           if (message.setupComplete) { connectedRef.current = true; setIsConnected(true); return; }
           const content = message.serverContent; if (!content) return;
-          if (content.inputTranscription?.text) setTranscript((previous) => `${previous}${previous ? "\n" : ""}${content.inputTranscription.text}`);
-          if (content.outputTranscription?.text) setTranscript((previous) => `${previous}${previous ? "\nEcho: " : "Echo: "}${content.outputTranscription.text}`);
+          if (content.inputTranscription?.text) addTranscriptMessage("user", content.inputTranscription.text);
+          if (content.outputTranscription?.text) addTranscriptMessage("echo", content.outputTranscription.text);
           for (const part of content.modelTurn?.parts || []) if (part.inlineData?.data) await playGeminiAudio(part.inlineData.data);
           if (content.turnComplete) setIsSpeaking(false);
         } catch (messageError) {
@@ -132,13 +150,13 @@ export function useRealtimeSession() {
     } catch (connectError: any) {
       console.error("[Gemini Live] Connection failed", connectError); cleanup(); setError(connectError.message || "Gemini Live connection failed.");
     }
-  }, [cleanup, playGeminiAudio]);
+  }, [addTranscriptMessage, cleanup, playGeminiAudio]);
 
   const disconnect = useCallback(() => cleanup(), [cleanup]);
   const submitText = useCallback((text: string) => {
     const cleanText = text.trim(); if (!cleanText) return;
-    setTranscript((previous) => `${previous}${previous ? "\n" : ""}${cleanText}`);
+    addTranscriptMessage("user", cleanText);
     if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify({ realtimeInput: { text: cleanText } }));
-  }, []);
+  }, [addTranscriptMessage]);
   return { connect, disconnect, isConnected, isSpeaking, transcript, messages, error, submitText };
 }
