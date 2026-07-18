@@ -24,15 +24,25 @@ async def require_legacy_contact(
 ) -> str:
     user_id = user.get("sub")
     
-    subject_id = await conn.fetchval("SELECT subject_id FROM echo_profiles WHERE id = $1 AND user_id = $2", echo_id, user_id)
-    if not subject_id:
+    profile = await conn.fetchrow("SELECT subject_id, user_id FROM echo_profiles WHERE id = $1", echo_id)
+    if not profile:
         raise HTTPException(status_code=404, detail="Echo profile not found")
-        
-    # Echoes are private SaaS resources.  The owner always has full access;
-    # sharing is intentionally not inferred from a legacy-contact row.
-    return "owner"
+    if str(profile["user_id"]) == str(user_id):
+        return "owner"
 
-@router.post("/{echo_id}/converse")
+    contact = await conn.fetchrow(
+        "SELECT access_level FROM legacy_contacts WHERE subject_id = $1 AND user_id = $2 AND accepted_at IS NOT NULL",
+        profile["subject_id"], user_id,
+    )
+    if not contact:
+        raise HTTPException(status_code=403, detail="You do not have access to this family conversation")
+    return contact["access_level"]
+
+@router.post(
+    "/{echo_id}/converse",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {}}}},
+)
 async def converse(
     echo_id: str,
     user: Annotated[dict, Depends(get_current_user)],
@@ -62,7 +72,11 @@ async def converse(
             text=text,
             audio_path=audio_path
         )
-        return StreamingResponse(stream_gen, media_type="text/event-stream")
+        return StreamingResponse(
+            stream_gen,
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+        )
     finally:
         if audio_path and os.path.exists(audio_path):
             os.remove(audio_path)

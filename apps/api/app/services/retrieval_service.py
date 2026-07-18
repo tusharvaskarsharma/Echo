@@ -37,13 +37,12 @@ class RetrievalService:
             filter=metadata_filter
         )
         
-        if not matches:
+        grounded_matches = [
+            match for match in matches
+            if match.get("score", 0.0) >= 0.72 and match.get("metadata", {}).get("content")
+        ]
+        if not grounded_matches:
+            logger.info("No consent-allowed memory met the 0.72 retrieval threshold.")
             return []
-            
-        # Enforce threshold
-        best_score = matches[0].get("score", 0.0)
-        if best_score < 0.72:
-            logger.info(f"Highest score {best_score} < 0.72 threshold. Returning no results.")
-            return []
-            
-        return [match.get("metadata", {}) for match in matches]
+
+        return [match["metadata"] for match in grounded_matches]
