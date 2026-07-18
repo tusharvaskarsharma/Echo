@@ -20,7 +20,7 @@ else:
         "echo_worker",
         broker=os.getenv("REDIS_URL", settings.redis_url),
         backend=os.getenv("REDIS_URL", settings.redis_url),
-        include=["app.workers.process_session", "app.workers.retrain_persona"]
+        include=["app.workers.process_session", "app.workers.retrain_persona", "app.workers.sync_consent"]
     )
 
     celery_app.conf.update(

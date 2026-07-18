@@ -7,10 +7,10 @@ from app.db.client import get_db, get_optional_db
 from app.db import repositories
 from app.models.memory import MemoryFragment, MemoryPatch, DraftMemoryCreate, ConversationMemoryCreate, ConsentLevel
 from uuid import uuid4
-from app.services.pinecone_service import PineconeService
 from app.services.memory_storage_service import MemoryStorageService
 from app.models.session import SessionCreate, SessionStatus, SessionUpdate
 from app.services.session_service import SessionService
+from app.workers.task_runner import run_task
 
 router = APIRouter(
     prefix='/memories', 
@@ -87,11 +87,19 @@ async def update_memory_consent(
         raise HTTPException(status_code=404, detail="Memory not found")
         
     updated = await repositories.update_memory(conn, memory_id, subject_id, {"consent_level": patch.consent_level.value})
+    if not updated:
+        # The row could have been deleted after the owned read above.
+        raise HTTPException(status_code=404, detail="Memory not found")
     
+    # PostgreSQL is now authoritative and the HTTP response is intentionally
+    # not coupled to Pinecone availability. The worker re-reads this owned row
+    # before updating the matching vector's consent metadata.
     try:
-        pinecone_service = PineconeService()
-        pinecone_service.update_metadata(str(subject_id), memory_id, {"consent_level": patch.consent_level.value})
-    except Exception as e:
-        print(f"Failed to sync pinecone: {e}")
-        
+        run_task("sync_memory_consent", str(updated.id), str(subject_id))
+    except Exception:
+        # A broker outage must not lie about the durable privacy change. The
+        # error is logged by the task dispatcher; a queue monitor can retry it.
+        import logging
+        logging.getLogger(__name__).exception("Unable to dispatch Pinecone consent synchronization")
+
     return updated

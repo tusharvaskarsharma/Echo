@@ -71,6 +71,10 @@ def _run_task_sync(task_name: str, *args, **kwargs):
         from app.workers.retrain_persona import _retrain_persona_async
         _run_async(_retrain_persona_async(*args, **kwargs))
 
+    elif task_name == "sync_memory_consent":
+        from app.workers.sync_consent import _sync_memory_consent_async
+        _run_async(_sync_memory_consent_async(*args, **kwargs))
+
     else:
         raise ValueError(f"Unknown task: {task_name}")
 
@@ -84,6 +88,10 @@ def _run_task_celery(task_name: str, *args, **kwargs):
     elif task_name == "retrain_persona":
         from app.workers.retrain_persona import retrain_persona_task
         retrain_persona_task.delay(*args, **kwargs)
+
+    elif task_name == "sync_memory_consent":
+        from app.workers.sync_consent import sync_memory_consent
+        sync_memory_consent.delay(*args, **kwargs)
 
     else:
         raise ValueError(f"Unknown task: {task_name}")
