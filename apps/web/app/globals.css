@@ -504,6 +504,14 @@
   .nav-shell nav a { padding: 0.45rem 0.6rem; white-space: nowrap; }
   .nav-account { flex: 0 0 auto; max-width: 7rem; }
 }
+
+/* The Echo call view is intentionally dense enough to keep the entire
+   conversation workspace usable at common laptop heights. */
+@media (min-width: 1280px) and (max-height: 1050px) {
+  .echo-experience aside > section { padding: 1.25rem !important; }
+  .echo-experience aside > details { padding: 1rem !important; }
+  .echo-experience aside h2 { font-size: 1.55rem !important; }
+}
 /* ----------------------------------
    Session Screen
    ---------------------------------- */

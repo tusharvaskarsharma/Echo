@@ -10,7 +10,14 @@ class RetrievalService:
         self.embedding_service = EmbeddingService()
         self.pinecone_service = PineconeService()
 
-    async def retrieve_memories(self, question: str, subject_id: str, allowed_consent_levels: List[str]) -> List[Dict]:
+    async def retrieve_memories(
+        self,
+        question: str,
+        subject_id: str,
+        allowed_consent_levels: List[str],
+        *,
+        min_score: float = 0.72,
+    ) -> List[Dict]:
         """
         Retrieves relevant memories based on semantic similarity.
         Filters by subject_id and consent_level.
@@ -39,10 +46,10 @@ class RetrievalService:
         
         grounded_matches = [
             match for match in matches
-            if match.get("score", 0.0) >= 0.72 and match.get("metadata", {}).get("content")
+            if match.get("score", 0.0) >= min_score and match.get("metadata", {}).get("content")
         ]
         if not grounded_matches:
-            logger.info("No consent-allowed memory met the 0.72 retrieval threshold.")
+            logger.info("No consent-allowed memory met the %.2f retrieval threshold.", min_score)
             return []
 
         return [match["metadata"] for match in grounded_matches]

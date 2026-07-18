@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from .config import get_settings
 
-from .routers import sessions, memories, echo, finetune, auth, realtime, mind
+from .routers import sessions, memories, echo, echo_conversation, finetune, auth, realtime, mind
 from .db.client import db_client
 from .auth.middleware import AuthMiddleware
 
@@ -78,6 +78,7 @@ app.add_api_route("/account", auth.delete_account, methods=["DELETE"], status_co
 app.include_router(sessions.router)
 app.include_router(memories.router)
 app.include_router(echo.router)
+app.include_router(echo_conversation.router)
 app.include_router(finetune.router)
 app.include_router(realtime.router)
 app.include_router(mind.router)

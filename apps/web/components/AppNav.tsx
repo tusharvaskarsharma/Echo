@@ -8,6 +8,7 @@ import { createClient } from "../lib/supabase/client";
 
 const ownerLinks = [
   { href: "/subject/dashboard", label: "Dashboard", matches: ["/subject/dashboard", "/dashboard"] },
+  { href: "/subject/echo", label: "Talk", matches: ["/subject/echo"] },
   { href: "/subject/memories", label: "Legacy map", matches: ["/subject/memories", "/memories", "/legacy"] },
   { href: "/subject/session", label: "Record", matches: ["/subject/session", "/session"] },
   { href: "/settings", label: "Settings", matches: ["/settings"] },
