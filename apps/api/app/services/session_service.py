@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from app.models.session import Session, SessionStatus, SessionCreate, SessionUpdate, PaginatedSessionResponse
 from app.db import repositories
 from app.workers.task_runner import run_task
+from app.services.session_audio_storage_service import SessionAudioStorageService
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,20 @@ class SessionService:
                 logger.error(f"Failed to trigger process_session: {e}")
                 
         return updated_session
+
+    async def save_audio(self, session_id: str, content: bytes, content_type: str) -> Session:
+        if not content:
+            raise HTTPException(status_code=400, detail="The uploaded recording is empty")
+        session = await self.get_session(session_id)
+        audio_url = await SessionAudioStorageService().upload(
+            self.subject_id, str(session.id), content, content_type,
+        )
+        updated = await repositories.update_session_audio_url(
+            self.conn, session.id, self.subject_id, audio_url,
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return updated
 
     async def delete_session(self, session_id: str) -> None:
         await self.get_session(session_id) # Validates ownership and existence

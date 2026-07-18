@@ -65,6 +65,14 @@ async def update_session(conn: asyncpg.Connection, session: Session, user_id: UU
     row = await conn.fetchrow(query, session.status, session.ended_at, session.id, user_id)
     return Session(**dict(row)) if row else session
 
+
+async def update_session_audio_url(conn: asyncpg.Connection, session_id: UUID | str, user_id: UUID | str, audio_url: str) -> Session | None:
+    row = await conn.fetchrow(
+        "UPDATE sessions SET audio_url = $1 WHERE id = $2 AND user_id = $3 RETURNING *",
+        audio_url, session_id, user_id,
+    )
+    return Session(**dict(row)) if row else None
+
 async def delete_session(conn: asyncpg.Connection, session_id: UUID | str, user_id: UUID | str) -> bool:
     result = await conn.execute("DELETE FROM sessions WHERE id = $1 AND user_id = $2", session_id, user_id)
     return result == "DELETE 1"
@@ -77,15 +85,15 @@ async def create_memory(conn: asyncpg.Connection, memory: MemoryFragment, user_i
     if not owner_id:
         raise ValueError("Cannot create a memory without an owning user")
     query = """
-    INSERT INTO memories (id, session_id, subject_id, user_id, content, emotion_tags, topics, people_mentioned, consent_level, confidence_score)
-    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10)
+    INSERT INTO memories (id, session_id, subject_id, user_id, content, emotion_tags, topics, people_mentioned, consent_level, confidence_score, time_period)
+    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, $11)
     RETURNING *
     """
     row = await conn.fetchrow(
         query, 
         memory.id, memory.session_id, memory.subject_id, owner_id, memory.content,
         json.dumps(memory.emotion_tags), json.dumps(memory.topics),
-        json.dumps(memory.people_mentioned), memory.consent_level, memory.confidence_score
+        json.dumps(memory.people_mentioned), memory.consent_level, memory.confidence_score, memory.time_period
     )
     if row:
         row_dict = dict(row)

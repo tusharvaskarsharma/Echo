@@ -1,7 +1,7 @@
 "use client";
 import React, { useState } from 'react';
 import MemoryGraph from '@/components/memory/MemoryGraph';
-import MemoryDetails from '@/components/memory/MemoryDetails';
+import { MemoryCard } from '@/components/memory/MemoryCard';
 import { useMemoryGraph, Memory } from '@/hooks/useMemoryGraph';
 
 export default function MemoriesPage() {
@@ -16,18 +16,8 @@ export default function MemoriesPage() {
     );
   }
 
-  if (!memories || memories.length === 0) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-background p-8 text-center">
-        <div>
-          <h1 className="font-serif text-4xl text-text mb-4">No Memories Yet</h1>
-          <p className="text-text/70">Complete an interview session to start building your constellation.</p>
-        </div>
-      </div>
-    );
-  }
-
-  const activeMemory = selectedMemory ? memories.find(m => m.id === selectedMemory.id) || null : null;
+  const allMemories = memories || [];
+  const activeMemory = selectedMemory ? allMemories.find(m => m.id === selectedMemory.id) || null : null;
 
   return (
     <div className="relative w-full h-screen bg-background overflow-hidden">
@@ -38,13 +28,13 @@ export default function MemoriesPage() {
         </p>
       </div>
 
-      <MemoryGraph 
-        memories={memories} 
+      <MemoryGraph
+        memories={allMemories}
         onNodeClick={setSelectedMemory} 
         selectedId={activeMemory?.id || null} 
       />
 
-      <MemoryDetails 
+      <MemoryCard
         memory={activeMemory} 
         onClose={() => setSelectedMemory(null)}
         onConsentChange={patchConsent}

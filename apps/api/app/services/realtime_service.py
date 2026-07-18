@@ -15,7 +15,41 @@ class GeminiLiveService:
     def __init__(self):
         self.settings = get_settings()
 
-    async def create_ephemeral_token(self, user_id: str) -> dict:
+    @staticmethod
+    def _interviewer_setup(model: str) -> dict:
+        """Return the provider setup locked into each short-lived credential."""
+        return {
+            "model": f"models/{model}",
+            "generationConfig": {"responseModalities": ["AUDIO"]},
+            "inputAudioTranscription": {},
+            "outputAudioTranscription": {},
+            "systemInstruction": {
+                "parts": [{
+                    "text": (
+                        "You are Echo, a thoughtful interviewer helping capture the user's life story. "
+                        "Ask one empathetic, concise follow-up at a time. When the user shares a "
+                        "meaningful life memory, call tag_memory with a short factual summary and topics. "
+                        "Never invent a memory or tag a detail the user did not share."
+                    )
+                }]
+            },
+            "tools": [{
+                "functionDeclarations": [{
+                    "name": "tag_memory",
+                    "description": "Mark a meaningful, user-shared life memory for review in the interview UI.",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "summary": {"type": "STRING", "description": "A short factual summary of the memory."},
+                            "topics": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Up to three relevant topics."}
+                        },
+                        "required": ["summary"]
+                    }
+                }]
+            }]
+        }
+
+    async def create_ephemeral_token(self, user_id: str, session_id: str) -> dict:
         """Provision a constrained, one-use Gemini Live token for a browser session."""
         if not self.settings.gemini_api_key:
             raise HTTPException(status_code=503, detail="GEMINI_API_KEY is not configured")
@@ -29,15 +63,7 @@ class GeminiLiveService:
             "uses": 1,
             "expireTime": expires_at.isoformat().replace("+00:00", "Z"),
             "newSessionExpireTime": new_session_expires_at.isoformat().replace("+00:00", "Z"),
-            "bidiGenerateContentSetup": {
-                "model": f"models/{self.settings.gemini_live_model}",
-                "generationConfig": {"responseModalities": ["AUDIO"]},
-                "inputAudioTranscription": {},
-                "outputAudioTranscription": {},
-                "systemInstruction": {
-                    "parts": [{"text": "You are Echo, a thoughtful interviewer helping capture the user's life story. Ask empathetic, concise follow-up questions."}]
-                },
-            },
+            "bidiGenerateContentSetup": self._interviewer_setup(self.settings.gemini_live_model),
         }
         try:
             logger.info("Provisioning Gemini Live token for user %s", user_id)
@@ -58,7 +84,9 @@ class GeminiLiveService:
             return {
                 "access_token": access_token,
                 "model": self.settings.gemini_live_model,
+                "session_id": session_id,
                 "expires_at": token.get("expireTime") or expires_at.isoformat(),
+                "setup": self._interviewer_setup(self.settings.gemini_live_model),
             }
         except HTTPException:
             raise

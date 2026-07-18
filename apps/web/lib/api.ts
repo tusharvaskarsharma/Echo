@@ -75,6 +75,24 @@ export const api = {
       body: JSON.stringify({ status: "completed" })
     });
   },
+
+  uploadSessionAudio: async (sessionId: string, audio: Blob) => {
+    const { data: { session } } = await createClient().auth.getSession();
+    if (!session) throw new Error("You must be signed in.");
+    const form = new FormData();
+    form.append("audio", audio, "echo-session.webm");
+    const response = await fetch(`${API_BASE}/sessions/${sessionId}/audio`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      body: form,
+      credentials: "include",
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail || payload?.error || "Unable to upload the session recording.");
+    }
+    return response.json();
+  },
   
   createDraft: async (sessionId: string, data: any) => {
     return request("/memories/draft", {

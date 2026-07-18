@@ -78,8 +78,8 @@ def _run_task_sync(task_name: str, *args, **kwargs):
 def _run_task_celery(task_name: str, *args, **kwargs):
     """Dispatch the task via Celery .delay()."""
     if task_name == "process_session":
-        from app.workers.process_session import process_session_task
-        process_session_task.delay(*args, **kwargs)
+        from app.workers.process_session import process_session
+        process_session.delay(*args, **kwargs)
 
     elif task_name == "retrain_persona":
         from app.workers.retrain_persona import retrain_persona_task

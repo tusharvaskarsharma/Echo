@@ -4,12 +4,13 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, Circle, MessageCircle, Save, Send, Sparkles } from "lucide-react";
 import { AudioOrb } from "@/components/session/AudioOrb";
+import { MemoryFlash } from "@/components/session/MemoryFlash";
 import { SessionControls } from "@/components/session/SessionControls";
 import { useRealtimeSession } from "@/hooks/useRealtimeSession";
 import { api } from "@/lib/api";
 
 export default function SessionPage() {
-  const { connect, disconnect, isConnected, isSpeaking, transcript, messages, error, submitText } = useRealtimeSession();
+  const { connect, disconnect, finishRecording, isConnected, activeSpeaker, audioLevel, sessionId, transcript, messages, memoryFlashes, error, submitText } = useRealtimeSession();
   const [timer, setTimer] = useState(0);
   const [text, setText] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -57,7 +58,15 @@ export default function SessionPage() {
     setIsSaving(true);
     setSaveError(null);
     try {
-      await api.saveConversation(content);
+      const recording = await finishRecording();
+      if (sessionId && recording?.size) {
+        await api.uploadSessionAudio(sessionId, recording);
+        await api.finishSession(sessionId);
+      } else {
+        // Text-only and local no-Postgres sessions still persist as a private
+        // transcript memory through the Supabase Storage fallback.
+        await api.saveConversation(content);
+      }
       setSaved(true);
       disconnect();
     } catch (saveFailure) {
@@ -70,6 +79,7 @@ export default function SessionPage() {
 
   return (
     <main className="h-[100dvh] overflow-hidden bg-[radial-gradient(circle_at_80%_0%,#f1e4da_0,transparent_32%),#f8f6f2] p-3 sm:p-5">
+      <MemoryFlash memories={memoryFlashes} />
       <div className="mx-auto flex h-full max-w-7xl flex-col overflow-hidden rounded-[30px] border border-white/80 bg-white/45 shadow-[0_24px_70px_rgba(92,61,48,0.12)] backdrop-blur">
         <header className="flex items-center justify-between border-b border-primary/10 px-5 py-4 sm:px-7">
           <div className="flex items-center gap-3 sm:gap-5">
@@ -117,8 +127,8 @@ export default function SessionPage() {
             </section>
 
             <aside className="flex min-h-0 flex-col overflow-y-auto rounded-[24px] border border-primary/10 bg-[#fcf8f5]/90 p-5 shadow-sm">
-              <div className="text-center"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Voice studio</p><h2 className="mt-1 font-serif text-3xl text-text">{isConnected ? (isSpeaking ? "Echo is listening" : "Session active") : "Ready when you are"}</h2></div>
-              <div className="flex flex-1 items-center justify-center py-3"><AudioOrb state={!isConnected ? "disconnected" : isSpeaking ? "speaking" : "listening"} compact /></div>
+              <div className="text-center"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Voice studio</p><h2 className="mt-1 font-serif text-3xl text-text">{!isConnected ? "Ready when you are" : activeSpeaker === "echo" ? "Echo is speaking" : activeSpeaker === "subject" ? "Listening to you" : "Session active"}</h2></div>
+              <div className="flex flex-1 items-center justify-center py-3"><AudioOrb state={!isConnected ? "disconnected" : activeSpeaker === "echo" ? "speaking" : "listening"} amplitude={audioLevel} compact /></div>
               <div className="rounded-2xl border border-primary/10 bg-white/70 p-4 text-center"><p className="text-sm font-medium text-text">{isConnected ? "Your microphone is on" : "Start when you feel ready"}</p><p className="mt-1 text-xs leading-5 text-text/55">You can speak naturally or type in the conversation panel.</p></div>
               <div className="mt-4"><SessionControls isConnected={isConnected} onConnect={startSession} onDisconnect={disconnect} /></div>
               <div className="mt-5 border-t border-primary/10 pt-5">

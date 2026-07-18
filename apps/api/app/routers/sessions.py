@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from typing import Annotated
 import asyncpg
 
@@ -55,6 +55,22 @@ async def update_session(
 ):
     """Updates a session's state and timestamps."""
     return await service.update_session(session_id, req)
+
+
+@router.put("/{session_id}/audio", response_model=Session)
+async def upload_session_audio(
+    session_id: str,
+    audio: UploadFile,
+    service: Annotated[SessionService, Depends(get_session_service)],
+):
+    """Upload an owned recording before marking its session complete."""
+    content_type = audio.content_type or "audio/webm"
+    if not content_type.startswith("audio/"):
+        raise HTTPException(status_code=415, detail="An audio recording is required")
+    content = await audio.read()
+    if len(content) > 75 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Recording exceeds the 75 MB upload limit")
+    return await service.save_audio(session_id, content, content_type)
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_session(

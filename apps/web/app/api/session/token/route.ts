@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
  * Authenticated proxy for a Gemini Live ephemeral token.  Gemini API keys must
  * never reach the browser; FastAPI validates the Supabase bearer token first.
  */
-export async function POST() {
+export async function POST(request: Request) {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
   const supabase = createClient();
   const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -18,9 +18,11 @@ export async function POST() {
     return NextResponse.json({ error: "Unable to retrieve your session." }, { status: 401 });
   }
 
+  const requestedSession = await request.text();
   const response = await fetch(`${apiBaseUrl}/api/session/token`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
+    headers: { Authorization: `Bearer ${sessionData.session.access_token}`, "Content-Type": "application/json" },
+    body: requestedSession || "{}",
     cache: "no-store",
   });
   const body = await response.text();

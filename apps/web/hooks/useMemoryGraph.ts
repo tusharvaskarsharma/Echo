@@ -1,6 +1,7 @@
 import useSWR from 'swr';
 import { API_BASE } from '../lib/api';
 import { createClient } from '../lib/supabase/client';
+import { useEffect } from 'react';
 
 const accessToken = async () => {
   const { data: { session } } = await createClient().auth.getSession();
@@ -28,6 +29,19 @@ export interface Memory {
 export function useMemoryGraph() {
   const { data: memories, error, mutate } = useSWR<Memory[]>(`${API_BASE}/memories`, fetcher);
 
+  useEffect(() => {
+    const supabase = createClient();
+    let channel: ReturnType<typeof supabase.channel> | undefined;
+    let active = true;
+    void supabase.auth.getUser().then(({ data }) => {
+      if (!active || !data.user) return;
+      channel = supabase.channel(`memory-graph:${data.user.id}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "memories", filter: `user_id=eq.${data.user.id}` }, () => { void mutate(); })
+        .subscribe();
+    });
+    return () => { active = false; if (channel) void supabase.removeChannel(channel); };
+  }, [mutate]);
+
   const patchConsent = async (id: string, consent_level: string) => {
     // Optimistic update
     if (memories) {
@@ -39,7 +53,7 @@ export function useMemoryGraph() {
     
     // API Call
     try {
-      await fetch(`${API_BASE}/memories/${id}`, {
+      const response = await fetch(`${API_BASE}/memories/${id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -47,8 +61,10 @@ export function useMemoryGraph() {
         },
         body: JSON.stringify({ consent_level })
       });
+      if (!response.ok) throw new Error("Unable to update consent");
     } catch (e) {
       console.error("Failed to patch consent", e);
+      if (memories) mutate(memories, false);
     }
     
     // Revalidate

@@ -34,9 +34,11 @@ def test_gemini_live_token_request_uses_constrained_v1alpha_contract(monkeypatch
     fake_client = FakeClient()
     monkeypatch.setattr(realtime_module.httpx, "AsyncClient", lambda **_kwargs: fake_client)
 
-    token = asyncio.run(GeminiLiveService().create_ephemeral_token("user-123"))
+    token = asyncio.run(GeminiLiveService().create_ephemeral_token("user-123", "session-123"))
 
     assert token["access_token"] == "ephemeral-token"
+    assert token["session_id"] == "session-123"
+    assert token["setup"]["tools"][0]["functionDeclarations"][0]["name"] == "tag_memory"
     request = fake_client.request
     assert request["url"].endswith("/v1alpha/auth_tokens")
     assert request["headers"]["x-goog-api-key"] == "test-gemini-key"
@@ -44,3 +46,4 @@ def test_gemini_live_token_request_uses_constrained_v1alpha_contract(monkeypatch
     assert token_config["uses"] == 1
     assert token_config["bidiGenerateContentSetup"]["model"] == "models/gemini-3.1-flash-live-preview"
     assert token_config["bidiGenerateContentSetup"]["generationConfig"]["responseModalities"] == ["AUDIO"]
+    assert token_config["bidiGenerateContentSetup"]["tools"][0]["functionDeclarations"][0]["name"] == "tag_memory"

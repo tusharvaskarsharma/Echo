@@ -12,10 +12,15 @@ class TranscriptionService:
         if not audio_url:
             raise ValueError("No valid audio URL provided for transcription.")
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".m4a")
-        async with httpx.AsyncClient() as client:
-            response = await client.get(audio_url, timeout=30.0)
-            response.raise_for_status()
-            temp_file.write(response.content)
+        if audio_url.startswith("supabase://echo-session-audio/"):
+            from app.services.session_audio_storage_service import SessionAudioStorageService
+            content = await SessionAudioStorageService().download(audio_url)
+        else:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(audio_url, timeout=30.0)
+                response.raise_for_status()
+                content = response.content
+        temp_file.write(content)
         temp_file.close()
         return temp_file.name
 
