@@ -37,6 +37,7 @@
 7. [Deployment Instructions](#7-deployment-instructions)
 8. [Mind Model Architecture](#8-mind-model-architecture)
 9. [Cognitive Engine Architecture](#9-cognitive-engine-architecture)
+10. [Autonomous Life Interview Engine](#10-autonomous-life-interview-engine)
 
 ---
 
@@ -108,7 +109,7 @@ Three converging forces make this the right moment:
 
 ### 2.1 Architecture Overview
 
-Echo is composed of six principal layers:
+Echo is composed of seven principal layers:
 
 - **Next.js 14 frontend** with real-time WebSocket connections for audio streaming
 - **FastAPI backend** orchestrating the AI pipeline and business logic
@@ -116,6 +117,7 @@ Echo is composed of six principal layers:
 - **Multi-model AI layer** — Gemini Live for native session audio and Gemini embeddings; Groq Llama for persona generation, structured extraction, and audio transcription
 - **Mind Model layer** — a consent-gated, evidence-linked cognitive model of values, reasoning, emotions, communication, and evolving life principles. It augments retrieval; it never substitutes unsupported traits for source memories.
 - **Cognitive Engine layer** — an intent-aware, relationship- and time-sensitive answer-planning layer that creates a bounded evidence ledger before persona generation. It never stores or exposes chain-of-thought.
+- **Autonomous Life Interview Engine** — a voluntary, coverage-aware long-horizon planner that identifies unexplored domains, recommends respectful follow-ups, tracks uncertainty, and keeps the subject in control.
 
 Redis handles session state and job queuing. All infrastructure is containerized and deployable on Railway or Fly.io within a hackathon window.
 
@@ -642,3 +644,19 @@ Question -> intent -> memory + Mind Model + relationship + timeline retrieval
 Internal deliberation and provider chain-of-thought are never exposed or persisted. The explainability response instead returns memory ids, Mind Model/value/policy ids, confidence, relationship context, timeline version, and conflict summary. Below-threshold evidence returns: *"I don't know enough about how they would think about this."*
 
 See [Cognitive Engine Architecture](docs/cognitive-engine-architecture.md) for intent-specific pipelines, backend service design, conflict and uncertainty policy, API contracts, Cognitive Debug View, deployment stages, and acceptance criteria. The executable schema is [013_cognitive_engine.sql](apps/api/app/db/migrations/013_cognitive_engine.sql).
+
+---
+
+## 10. Autonomous Life Interview Engine
+
+The Autonomous Life Interview Engine makes ECHO a respectful lifelong Digital Legacy Builder. It tracks what has been explored across life domains, uncertainty, time since discussion, relationship/timeline opportunities, and voluntary clarification work. It recommends the next conversation without treating unshared experiences as missing facts or pressuring the subject to disclose anything.
+
+```text
+Reviewed memories + Mind Model -> coverage and gap analysis
+-> voluntary interview plan -> adaptive conversation -> new evidence
+-> timeline/relationship updates -> completion snapshot
+```
+
+The subject can skip, defer, suppress, or disable every domain. Conflicting memories are preserved and scheduled for optional clarification; they are never overwritten. **Digital Mind Completion** measures evidence coverage and confidence, not the completeness of a person.
+
+See [Autonomous Life Interview Engine](docs/autonomous-life-interview-engine.md) for the coverage taxonomy, planning rules, safety policy, backend services, APIs, Life Journey dashboard, deployment plan, and acceptance criteria. The executable schema is [014_autonomous_life_interview_engine.sql](apps/api/app/db/migrations/014_autonomous_life_interview_engine.sql).
