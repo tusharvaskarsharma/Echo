@@ -33,9 +33,10 @@ export default function Login() {
   async function oauth(provider: "google" | "github") {
     setLoading(true);
     setError("");
+    const oauthOrigin = (process.env.NEXT_PUBLIC_SITE_URL || window.location.origin).replace(/\/$/, "");
     const { error: oauthError } = await createClient().auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(destination)}` },
+      options: { redirectTo: `${oauthOrigin}/auth/callback?next=${encodeURIComponent(destination)}` },
     });
     if (oauthError) {
       setError(oauthError.message);
