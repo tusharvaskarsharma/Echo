@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, ChevronRight, Download, LoaderCircle, LogOut, Save, ShieldCheck, Trash2, UserRound } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { API_BASE } from "@/lib/api";
 
 type ProfileForm = {
   full_name: string;
@@ -24,6 +25,15 @@ const initial: ProfileForm = {
 };
 
 type Notice = { type: "success" | "error"; text: string } | null;
+type UsernameStatus = "idle" | "invalid" | "checking" | "available" | "taken";
+
+const usernameSyntaxError = (username: string) => {
+  if (username.length < 3 || username.length > 20) return "Username must be between 3 and 20 characters";
+  if (!/^[a-z0-9_]+$/.test(username)) return "Only lowercase letters, numbers and underscore allowed";
+  if (username.startsWith("_") || username.endsWith("_")) return 'Username cannot start or end with "_"';
+  if (username.includes("__")) return "Username cannot contain consecutive underscores";
+  return null;
+};
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -32,6 +42,9 @@ export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
+  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
+  const [usernameMessage, setUsernameMessage] = useState("");
+  const loadedUsername = useRef("");
 
   const setValue = <Key extends keyof ProfileForm>(key: Key, value: ProfileForm[Key]) => setForm((current) => ({ ...current, [key]: value }));
 
@@ -59,15 +72,58 @@ export default function SettingsPage() {
           notifications: data.notification_preferences?.email ?? true,
           share_data: data.privacy_settings?.share_data ?? false,
         });
+        loadedUsername.current = data.username || "";
       }
       setIsLoading(false);
     };
     void loadProfile();
   }, [router]);
 
+  useEffect(() => {
+    const username = form.username.trim().toLowerCase();
+    const syntaxError = usernameSyntaxError(username);
+    if (syntaxError) {
+      setUsernameStatus("invalid");
+      setUsernameMessage(syntaxError);
+      return;
+    }
+    if (username === loadedUsername.current) {
+      setUsernameStatus("available");
+      setUsernameMessage("Username available");
+      return;
+    }
+
+    let cancelled = false;
+    setUsernameStatus("checking");
+    setUsernameMessage("Checking username...");
+    const timeout = window.setTimeout(async () => {
+      try {
+        const { data: { session } } = await createClient().auth.getSession();
+        const response = await fetch(`${API_BASE}/profile/check-username?username=${encodeURIComponent(username)}`, {
+          headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+        });
+        const result = await response.json().catch(() => null);
+        if (cancelled) return;
+        if (!response.ok) throw new Error(result?.detail || "Unable to check username");
+        setUsernameStatus(result.available ? "available" : "taken");
+        setUsernameMessage(result.available ? "Username available" : result.reason || "Username already taken");
+      } catch (error) {
+        if (!cancelled) {
+          setUsernameStatus("invalid");
+          setUsernameMessage(error instanceof Error ? error.message : "Unable to check username");
+        }
+      }
+    }, 400);
+    return () => { cancelled = true; window.clearTimeout(timeout); };
+  }, [form.username]);
+
   const save = async (event: FormEvent) => {
     event.preventDefault();
     setNotice(null);
+    if (usernameStatus !== "available") {
+      setNotice({ type: "error", text: usernameMessage || "Choose an available username before saving." });
+      return;
+    }
     setIsSaving(true);
     const supabase = createClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -77,21 +133,26 @@ export default function SettingsPage() {
       return;
     }
     const profile = {
-      id: user.id,
-      email: user.email || null,
       full_name: form.full_name.trim() || null,
-      username: form.username.trim() || null,
+      username: form.username.trim().toLowerCase(),
       bio: form.bio.trim() || null,
       timezone: form.timezone.trim() || "UTC",
       language: form.language.trim() || "en",
       country: form.country.trim() || null,
       theme_preference: form.theme_preference,
-      notification_preferences: { email: form.notifications },
-      privacy_settings: { share_data: form.share_data },
+      notifications: form.notifications,
+      share_data: form.share_data,
     };
-    const { data, error } = await supabase.from("profiles").upsert(profile, { onConflict: "id" }).select("*").single();
-    if (error) {
-      setNotice({ type: "error", text: `Settings could not be saved: ${error.message}` });
+    const { data: { session } } = await supabase.auth.getSession();
+    const response = await fetch(`${API_BASE}/profile`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+      body: JSON.stringify(profile),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      setNotice({ type: "error", text: `Settings could not be saved: ${data?.detail || "Please try again."}` });
+      if (response.status === 409) { setUsernameStatus("taken"); setUsernameMessage("Username already taken"); }
     } else {
       setForm((current) => ({
         ...current,
@@ -105,6 +166,9 @@ export default function SettingsPage() {
         notifications: data.notification_preferences?.email ?? current.notifications,
         share_data: data.privacy_settings?.share_data ?? current.share_data,
       }));
+      loadedUsername.current = data.username || "";
+      setUsernameStatus("available");
+      setUsernameMessage("Username available");
       setNotice({ type: "success", text: "Your settings are saved securely." });
     }
     setIsSaving(false);
@@ -136,6 +200,7 @@ export default function SettingsPage() {
   };
 
   const inputClass = "mt-1.5 w-full rounded-xl border border-primary/15 bg-white px-3.5 py-2.5 text-sm text-text shadow-sm outline-none transition placeholder:text-text/35 focus:border-primary/50 focus:ring-4 focus:ring-primary/10";
+  const usernameInputClass = `${inputClass} ${usernameStatus === "available" ? "border-success/70 focus:border-success focus:ring-success/10" : usernameStatus === "invalid" || usernameStatus === "taken" ? "border-red-400 focus:border-red-500 focus:ring-red-100" : ""}`;
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_15%_0%,#f1e4da_0,transparent_25%),#f8f6f2] px-4 py-5 sm:px-8 sm:py-8">
@@ -153,7 +218,12 @@ export default function SettingsPage() {
               <div className="flex items-start gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><UserRound size={19} /></span><div><h2 className="font-serif text-3xl text-text">Profile</h2><p className="mt-1 text-sm text-text/60">The details that make your Echo feel personal.</p></div></div>
               <div className="mt-6 grid gap-4 sm:grid-cols-2">
                 <label className="text-sm font-medium text-text/75">Full name<input className={inputClass} placeholder="Your full name" value={form.full_name} onChange={(event) => setValue("full_name", event.target.value)} /></label>
-                <label className="text-sm font-medium text-text/75">Username<input className={inputClass} placeholder="your-username" value={form.username} onChange={(event) => setValue("username", event.target.value)} /></label>
+                <label className="text-sm font-medium text-text/75">Username
+                  <span className="relative block"><input className={usernameInputClass} placeholder="your_username" value={form.username} onChange={(event) => setValue("username", event.target.value.trim().toLowerCase())} aria-describedby="username-feedback" aria-invalid={usernameStatus === "invalid" || usernameStatus === "taken"} />
+                    <span className="pointer-events-none absolute right-3.5 top-[1.05rem]">{usernameStatus === "checking" ? <LoaderCircle className="animate-spin text-text/45" size={17} /> : usernameStatus === "available" ? <Check className="text-success" size={17} /> : null}</span>
+                  </span>
+                  <span id="username-feedback" className={`mt-1.5 block text-xs ${usernameStatus === "available" ? "text-success" : usernameStatus === "checking" ? "text-text/50" : "text-red-600"}`} role={usernameStatus === "invalid" || usernameStatus === "taken" ? "alert" : "status"}>{usernameMessage || "Use 3–20 lowercase letters, numbers, or underscores."}</span>
+                </label>
                 <label className="sm:col-span-2 text-sm font-medium text-text/75">Bio<textarea className={`${inputClass} min-h-24 resize-y`} placeholder="A few words about you and the stories you want to preserve." value={form.bio} onChange={(event) => setValue("bio", event.target.value)} /></label>
                 <label className="text-sm font-medium text-text/75">Timezone<input className={inputClass} placeholder="Asia/Kolkata" value={form.timezone} onChange={(event) => setValue("timezone", event.target.value)} /></label>
                 <label className="text-sm font-medium text-text/75">Country<input className={inputClass} placeholder="India" value={form.country} onChange={(event) => setValue("country", event.target.value)} /></label>
@@ -175,7 +245,7 @@ export default function SettingsPage() {
           </div>
 
           <aside className="h-fit space-y-4 lg:sticky lg:top-8">
-            <section className="rounded-[26px] border border-primary/10 bg-[#2f2a28] p-6 text-white shadow-lg"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/55">Signed in as</p><p className="mt-2 break-all text-sm text-white/90">{isLoading ? "Loading account..." : email}</p><div className="mt-6 border-t border-white/10 pt-5"><button type="submit" disabled={isLoading || isSaving} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">{isSaving ? <LoaderCircle className="animate-spin" size={17} /> : <Save size={17} />}{isSaving ? "Saving settings..." : "Save changes"}</button></div></section>
+            <section className="rounded-[26px] border border-primary/10 bg-[#2f2a28] p-6 text-white shadow-lg"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/55">Signed in as</p><p className="mt-2 break-all text-sm text-white/90">{isLoading ? "Loading account..." : email}</p><div className="mt-6 border-t border-white/10 pt-5"><button type="submit" disabled={isLoading || isSaving || usernameStatus !== "available"} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">{isSaving ? <LoaderCircle className="animate-spin" size={17} /> : <Save size={17} />}{isSaving ? "Saving settings..." : "Save changes"}</button></div></section>
             {notice && <p className={`rounded-2xl border px-4 py-3 text-sm leading-5 ${notice.type === "success" ? "border-success/30 bg-green-50 text-green-800" : "border-red-200 bg-red-50 text-red-700"}`} role={notice.type === "error" ? "alert" : "status"}>{notice.type === "success" && <Check className="mr-2 inline" size={16} />}{notice.text}</p>}
             <section className="rounded-[26px] border border-primary/10 bg-white/75 p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-text/45">Account actions</p><div className="mt-3 divide-y divide-primary/10"><button type="button" onClick={exportData} className="flex w-full items-center justify-between py-3 text-left text-sm font-medium text-text/75 hover:text-primary"><span className="flex items-center gap-2"><Download size={16} /> Export my profile data</span><ChevronRight size={16} /></button><button type="button" onClick={logout} className="flex w-full items-center justify-between py-3 text-left text-sm font-medium text-text/75 hover:text-primary"><span className="flex items-center gap-2"><LogOut size={16} /> Log out</span><ChevronRight size={16} /></button></div></section>
             <button type="button" onClick={destroy} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100"><Trash2 size={16} /> Delete account</button>
