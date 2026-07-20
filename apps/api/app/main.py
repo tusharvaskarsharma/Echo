@@ -18,6 +18,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Echo API", version="0.1.0", lifespan=lifespan)
 settings = get_settings()
+cors_origins = settings.cors_origin_list
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(AuthMiddleware)
@@ -28,6 +29,10 @@ def health() -> dict:
         "ok": True,
         "mode": "live",
         "missing_live_integrations": settings.missing_live_integrations,
+        # Origins are public configuration, not credentials.  Exposing the
+        # effective parsed list makes a Railway configuration mistake directly
+        # diagnosable without leaking any secret.
+        "cors_origins": cors_origins,
     }
 
 @app.get("/health/db")
@@ -89,9 +94,12 @@ app.include_router(mind.router)
 # so browsers surface the real HTTP error instead of a misleading failed fetch.
 app = CORSMiddleware(
     app=app,
-    allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+    # Browser clients may add framework-specific request headers.  The origin
+    # itself remains an exact allow-list match; allowing requested headers here
+    # avoids failing a secure preflight solely because a harmless header changed.
+    allow_headers=["*"],
     max_age=600,
 )

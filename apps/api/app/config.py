@@ -1,4 +1,5 @@
 from functools import lru_cache
+from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -9,7 +10,7 @@ class Settings(BaseSettings):
     development_mode: bool = True
     cors_origins: str = (
         "http://localhost:3000,http://127.0.0.1:3000,"
-        "http://localhost:3001,http://127.0.0.1:3001,https://echo-web.vercel.app"
+        "http://localhost:3001,http://127.0.0.1:3001"
     )
     gemini_api_key: str
     gemini_live_model: str = "gemini-3.1-flash-live-preview"
@@ -40,6 +41,38 @@ class Settings(BaseSettings):
             "PINECONE_INDEX": self.pinecone_index,
         }
         return [name for name, value in required.items() if not value]
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        """Return canonical browser origins from Railway's comma-separated setting.
+
+        Railway stores environment values as strings, while an HTTP Origin never
+        includes a trailing slash.  Normalising here keeps a value copied from a
+        dashboard (for example ``https://app.example.com/``) from silently
+        failing the exact-origin CORS match.  The setting intentionally does not
+        support ``*`` because this API accepts credentials.
+        """
+        raw_value = self.cors_origins.strip()
+        if len(raw_value) >= 2 and raw_value[0] == raw_value[-1] and raw_value[0] in {"'", '"'}:
+            raw_value = raw_value[1:-1].strip()
+
+        origins: list[str] = []
+        for candidate in raw_value.split(","):
+            origin = candidate.strip().strip("'\"").rstrip("/")
+            if not origin:
+                continue
+            if origin == "*":
+                raise ValueError("CORS_ORIGINS cannot contain '*' when credentials are enabled.")
+
+            parsed = urlparse(origin)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.path:
+                raise ValueError(f"Invalid CORS origin: {candidate!r}")
+            if origin not in origins:
+                origins.append(origin)
+
+        if not origins:
+            raise ValueError("CORS_ORIGINS must include at least one HTTP(S) origin.")
+        return origins
 
 
 @lru_cache

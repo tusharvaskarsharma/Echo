@@ -601,7 +601,8 @@ The FastAPI backend and Celery workers are containerised using Nixpacks.
    - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`
    - `DATABASE_URL` (Auto-provisioned if using Railway PostgreSQL, or use Supabase pooling URL)
    - `REDIS_URL` (Auto-provisioned if using Railway Redis)
-   - `CORS_ORIGINS` (Set to your Vercel frontend URL, e.g., `https://echo-web.vercel.app`)
+   - `DEVELOPMENT_MODE=false`
+   - `CORS_ORIGINS` (set this to the exact Vercel browser origin, with no path; for the current deployment: `https://echo-web-mocha.vercel.app`). Multiple approved origins can be comma-separated. Do not use `*`, because authenticated requests require credentialed CORS.
 4. Migrations will automatically run on startup via the configured `startCommand` in `railway.toml`.
 
 ### 7.2 Frontend (Vercel)
@@ -612,6 +613,10 @@ The Next.js 14 frontend is pre-configured for Vercel deployment.
    - `NEXT_PUBLIC_API_BASE_URL` (Set to your Railway backend URL, e.g., `https://echo-api.up.railway.app`)
    - `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (the public Supabase browser configuration)
 4. Vercel will automatically build and deploy using `pnpm`.
+
+### 7.3 Verify the browser-to-API connection
+
+After Railway redeploys, open `https://<railway-api-domain>/health`. The response includes a non-secret `cors_origins` field. Confirm it contains the precise Vercel domain before testing the UI. The API returns `Access-Control-Allow-Origin` and `Access-Control-Allow-Credentials: true` for each approved origin, including `401`/`403` API responses, so the browser can handle authentication errors normally.
 
 ---
 
