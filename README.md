@@ -595,7 +595,7 @@ Echo is designed to be deployed with zero code changes using Railway for the bac
 ### 7.1 Backend (Railway)
 The FastAPI backend and Celery workers are containerised using Nixpacks.
 1. Connect your GitHub repository to Railway.
-2. Railway will automatically detect the `apps/api/railway.toml` and configure the Web and Worker services.
+2. Create an API Web service with `apps/api/railway.toml`. Create a second Worker service from the same `apps/api` root and set its Railway config path to `railway.worker.toml`; Railway runs one process per service.
 3. Configure the following environment variables in Railway:
    - `GEMINI_API_KEY`, `GROQ_API_KEY`, `PINECONE_API_KEY`, `PINECONE_INDEX`
    - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`
