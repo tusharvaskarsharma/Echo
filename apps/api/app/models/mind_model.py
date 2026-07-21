@@ -1,4 +1,4 @@
-"""Evidence-bound contract for the persistent ECHO Mind Model."""
+"""Evidence-bound contract for the persistent EMMY Mind Model."""
 
 from typing import Any
 from pydantic import BaseModel, Field, field_validator

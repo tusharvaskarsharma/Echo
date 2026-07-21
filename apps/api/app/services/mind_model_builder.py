@@ -16,7 +16,7 @@ class MindModelBuilderService:
 
         evidence = [memory.model_dump(mode="json") for memory in memories]
         prompt = f"""
-You are the Mind Model Builder for ECHO. Transform the supplied structured memories into a persistent cognitive model.
+You are the Mind Model Builder for EMMY. Transform the supplied structured memories into a persistent cognitive model.
 Use only traits directly supported by the memories; never infer or invent beliefs, values, preferences, personality, or relationships.
 Ignore greetings, filler, and isolated events.
 

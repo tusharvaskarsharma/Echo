@@ -190,13 +190,13 @@ export default function SettingsPage() {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const anchor = document.createElement("a");
     anchor.href = URL.createObjectURL(blob);
-    anchor.download = "echo-profile-data.json";
+    anchor.download = "emmy-profile-data.json";
     anchor.click();
     URL.revokeObjectURL(anchor.href);
   };
 
   const destroy = async () => {
-    if (!window.confirm("This permanently deletes your Echo account and data. Continue?")) return;
+    if (!window.confirm("This permanently deletes your Emmy account and data. Continue?")) return;
     const { data: { session } } = await createClient().auth.getSession();
     await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/account`, { method: "DELETE", headers: { Authorization: `Bearer ${session?.access_token}` } });
     await createClient().auth.signOut();
@@ -231,19 +231,19 @@ export default function SettingsPage() {
           <p className="hidden items-center gap-2 text-sm text-text/50 sm:flex"><ShieldCheck size={16} className="text-success" /> Private account settings</p>
         </header>
 
-        <div className="mb-8"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Your Echo</p><h1 className="mt-2 font-serif text-5xl text-text sm:text-6xl">Settings</h1><p className="mt-3 max-w-2xl text-base leading-7 text-text/65">Manage your profile, preferences, and privacy. Changes are saved to your private account.</p></div>
+        <div className="mb-8"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Your Emmy</p><h1 className="mt-2 font-serif text-5xl text-text sm:text-6xl">Settings</h1><p className="mt-3 max-w-2xl text-base leading-7 text-text/65">Manage your profile, preferences, and privacy. Changes are saved to your private account.</p></div>
 
         <form onSubmit={save} className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
           <div className="space-y-6">
             <section className="rounded-[26px] border border-primary/10 bg-white/75 p-5 shadow-clay sm:p-7">
-              <div className="flex items-start gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><UserRound size={19} /></span><div><h2 className="font-serif text-3xl text-text">Profile</h2><p className="mt-1 text-sm text-text/60">The details that make your Echo feel personal.</p></div></div>
+              <div className="flex items-start gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><UserRound size={19} /></span><div><h2 className="font-serif text-3xl text-text">Profile</h2><p className="mt-1 text-sm text-text/60">The details that make your Emmy feel personal.</p></div></div>
               <div className="mt-6 grid gap-4 sm:grid-cols-2">
                 <label className="text-sm font-medium text-text/75">Full name<input className={inputClass} placeholder="Your full name" value={form.full_name} onChange={(event) => setValue("full_name", event.target.value)} /></label>
                 <label className="text-sm font-medium text-text/75">Username
                   <span className="relative block"><input className={usernameInputClass} placeholder="your_username" value={form.username} onChange={(event) => setValue("username", event.target.value.trim().toLowerCase())} aria-describedby="username-feedback" aria-invalid={usernameStatus === "invalid" || usernameStatus === "taken"} />
                     <span className="pointer-events-none absolute right-3.5 top-[1.05rem]">{usernameStatus === "checking" ? <LoaderCircle className="animate-spin text-text/45" size={17} /> : usernameStatus === "available" ? <Check className="text-success" size={17} /> : null}</span>
                   </span>
-                  <span id="username-feedback" className={`mt-1.5 block text-xs ${usernameStatus === "available" ? "text-success" : usernameStatus === "checking" ? "text-text/50" : "text-red-600"}`} role={usernameStatus === "invalid" || usernameStatus === "taken" ? "alert" : "status"}>{usernameMessage || "Use 3–30 lowercase letters, numbers, or underscores. Changes require confirmation."}</span>
+                  <span id="username-feedback" className={`mt-1.5 block text-xs ${usernameStatus === "available" ? "text-success" : usernameStatus === "checking" ? "text-text/50" : "text-red-600"}`} role={usernameStatus === "invalid" || usernameStatus === "taken" ? "alert" : "status"}>{usernameMessage || "Use 3Ã¢â‚¬â€œ30 lowercase letters, numbers, or underscores. Changes require confirmation."}</span>
                 </label>
                 <label className="sm:col-span-2 text-sm font-medium text-text/75">Bio<textarea className={`${inputClass} min-h-24 resize-y`} placeholder="A few words about you and the stories you want to preserve." value={form.bio} onChange={(event) => setValue("bio", event.target.value)} /></label>
                 <label className="text-sm font-medium text-text/75">Timezone<input className={inputClass} placeholder="Asia/Kolkata" value={form.timezone} onChange={(event) => setValue("timezone", event.target.value)} /></label>
@@ -256,11 +256,11 @@ export default function SettingsPage() {
               <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Experience</p><h2 className="mt-1 font-serif text-3xl text-text">Appearance & privacy</h2></div>
               <div className="mt-6 grid gap-5 sm:grid-cols-2">
                 <label className="text-sm font-medium text-text/75">Theme preference<select className={inputClass} value={form.theme_preference} onChange={(event) => setValue("theme_preference", event.target.value)}><option value="system">System default</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
-                <div className="rounded-2xl border border-primary/10 bg-[#fcf7f3] p-4 text-sm leading-6 text-text/65">Voice and AI preferences remain private to your account. They are used only to personalise your Echo experience.</div>
+                <div className="rounded-2xl border border-primary/10 bg-[#fcf7f3] p-4 text-sm leading-6 text-text/65">Voice and AI preferences remain private to your account. They are used only to personalise your Emmy experience.</div>
               </div>
               <div className="mt-5 space-y-3">
                 <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-primary/10 bg-white px-4 py-3.5"><span><span className="block text-sm font-semibold text-text">Email notifications</span><span className="mt-0.5 block text-xs text-text/55">Receive account and activity updates.</span></span><input className="h-5 w-5 accent-primary" type="checkbox" checked={form.notifications} onChange={(event) => setValue("notifications", event.target.checked)} /></label>
-                <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-primary/10 bg-white px-4 py-3.5"><span><span className="block text-sm font-semibold text-text">Anonymous improvement data</span><span className="mt-0.5 block text-xs text-text/55">Share anonymised usage data to improve Echo.</span></span><input className="h-5 w-5 accent-primary" type="checkbox" checked={form.share_data} onChange={(event) => setValue("share_data", event.target.checked)} /></label>
+                <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-primary/10 bg-white px-4 py-3.5"><span><span className="block text-sm font-semibold text-text">Anonymous improvement data</span><span className="mt-0.5 block text-xs text-text/55">Share anonymised usage data to improve Emmy.</span></span><input className="h-5 w-5 accent-primary" type="checkbox" checked={form.share_data} onChange={(event) => setValue("share_data", event.target.checked)} /></label>
               </div>
             </section>
           </div>

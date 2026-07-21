@@ -8,10 +8,10 @@ from app.services.persona_service import PersonaService
 from app.services.retrieval_service import RetrievalService
 
 
-TRANSCRIPT = """Echo: How did you meet your wife?
+TRANSCRIPT = """Emmy: How did you meet your wife?
 You: I met Neha through a mutual friend while working at a railway workshop.
 
-Echo: What lesson did your parents teach you?
+Emmy: What lesson did your parents teach you?
 You: They taught me character over success, honesty, and resilience."""
 
 

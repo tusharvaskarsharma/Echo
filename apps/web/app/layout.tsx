@@ -15,7 +15,7 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Echo - Your Living Legacy",
+  title: "Emmy - Your Living Legacy",
   description: "AI-powered living legacy platform.",
 };
 

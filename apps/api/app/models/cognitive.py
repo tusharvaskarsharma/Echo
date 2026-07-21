@@ -1,4 +1,4 @@
-"""Validated, explainable output contract for ECHO's Cognitive Engine."""
+"""Validated, explainable output contract for EMMY's Cognitive Engine."""
 
 from typing import Literal
 from pydantic import BaseModel, Field, model_validator

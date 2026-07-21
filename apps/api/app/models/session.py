@@ -33,7 +33,7 @@ class SessionUpdate(BaseModel):
 
 
 class SessionTranscriptUpdate(BaseModel):
-    """The browser's complete Echo/User conversation, before audio processing."""
+    """The browser's complete Emmy/User conversation, before audio processing."""
     transcript: str
 
 class PaginatedSessionResponse(BaseModel):

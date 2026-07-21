@@ -47,7 +47,7 @@ class FinetuneBuilderService:
             # 1. Synthesize Dataset
             dataset_path = await self._generate_jsonl(subject_id, memories)
             
-            # Groq does not offer an equivalent hosted fine-tuning API.  Echo
+            # Groq does not offer an equivalent hosted fine-tuning API. Emmy
             # retains the generated, consent-scoped dataset for RAG/persona
             # evaluation instead of uploading private memories to another host.
             return await repositories.update_finetune_job(self.conn, job_id, {

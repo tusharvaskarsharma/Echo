@@ -8,7 +8,7 @@ const INPUT_SAMPLE_RATE = 16_000;
 const OUTPUT_SAMPLE_RATE = 24_000;
 const MAX_RECONNECT_ATTEMPTS = 3;
 
-export type ConversationMessage = { id: string; speaker: "echo" | "user"; text: string };
+export type ConversationMessage = { id: string; speaker: "emmy" | "user"; text: string };
 type LiveToken = { access_token: string; session_id: string; model: string; setup: Record<string, unknown>; expires_at: string };
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -48,7 +48,7 @@ function analyserLevel(analyser: AnalyserNode | null) {
 export function useRealtimeSession() {
   const [isConnected, setIsConnected] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [activeSpeaker, setActiveSpeaker] = useState<"echo" | "subject" | null>(null);
+  const [activeSpeaker, setActiveSpeaker] = useState<"emmy" | "subject" | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [transcript, setTranscript] = useState("");
@@ -70,7 +70,7 @@ export function useRealtimeSession() {
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef<number | null>(null);
   const amplitudeFrameRef = useRef<number | null>(null);
-  const echoUntilRef = useRef(0);
+  const emmyUntilRef = useRef(0);
   const sessionIdRef = useRef<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
@@ -83,7 +83,7 @@ export function useRealtimeSession() {
       if (last?.speaker === speaker) return [...previous.slice(0, -1), { ...last, text: `${last.text}${last.text.endsWith(" ") ? "" : " "}${cleanText}` }];
       return [...previous, { id: `${speaker}-${Date.now()}-${Math.random().toString(36).slice(2)}`, speaker, text: cleanText }];
     });
-    setTranscript((previous) => `${previous}${previous ? "\n" : ""}${speaker === "echo" ? "Echo" : "You"}: ${cleanText}`);
+    setTranscript((previous) => `${previous}${previous ? "\n" : ""}${speaker === "emmy" ? "Emmy" : "You"}: ${cleanText}`);
   }, []);
 
   const showMemoryFlash = useCallback((summary: string, topics: string[]) => {
@@ -95,9 +95,9 @@ export function useRealtimeSession() {
   const sampleAmplitude = useCallback(() => {
     const inputLevel = analyserLevel(inputAnalyserRef.current);
     const outputLevel = analyserLevel(outputAnalyserRef.current);
-    const echoActive = outputLevel > 0.025 || performance.now() < echoUntilRef.current;
+    const emmyActive = outputLevel > 0.025 || performance.now() < emmyUntilRef.current;
     const subjectActive = inputLevel > 0.035;
-    const speaker = echoActive ? "echo" : subjectActive ? "subject" : null;
+    const speaker = emmyActive ? "emmy" : subjectActive ? "subject" : null;
     setAudioLevel(Math.max(inputLevel, outputLevel));
     setActiveSpeaker(speaker);
     setIsSpeaking(Boolean(speaker));
@@ -171,7 +171,7 @@ export function useRealtimeSession() {
     const source = context.createBufferSource(); source.buffer = audioBuffer; source.connect(outputAnalyserRef.current);
     const startAt = Math.max(context.currentTime + 0.03, nextAudioTimeRef.current);
     source.start(startAt); nextAudioTimeRef.current = startAt + audioBuffer.duration;
-    echoUntilRef.current = performance.now() + Math.max(50, (nextAudioTimeRef.current - context.currentTime) * 1000);
+    emmyUntilRef.current = performance.now() + Math.max(50, (nextAudioTimeRef.current - context.currentTime) * 1000);
   }, []);
 
   const handleToolCalls = useCallback((socket: WebSocket, message: any) => {
@@ -184,7 +184,7 @@ export function useRealtimeSession() {
         showMemoryFlash(summary, topics);
         return { id: call.id, name: call.name, response: { accepted: true } };
       }
-      return { id: call.id, name: call.name, response: { accepted: false, reason: "Unknown Echo tool" } };
+      return { id: call.id, name: call.name, response: { accepted: false, reason: "Unknown Emmy tool" } };
     });
     if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ toolResponse: { functionResponses: responses } }));
   }, [showMemoryFlash]);
@@ -220,7 +220,7 @@ export function useRealtimeSession() {
         handleToolCalls(socket, message);
         const content = message.serverContent; if (!content) return;
         if (content.inputTranscription?.text) addTranscriptMessage("user", content.inputTranscription.text);
-        if (content.outputTranscription?.text) addTranscriptMessage("echo", content.outputTranscription.text);
+        if (content.outputTranscription?.text) addTranscriptMessage("emmy", content.outputTranscription.text);
         for (const part of content.modelTurn?.parts || []) if (part.inlineData?.data) await playGeminiAudio(part.inlineData.data);
       } catch (messageError) {
         console.error("[Gemini Live] Unable to decode a server message", messageError);

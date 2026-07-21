@@ -1,5 +1,5 @@
--- 004_echo_profiles.sql
-CREATE TABLE IF NOT EXISTS echo_profiles (
+-- 004_emmy_profiles.sql
+CREATE TABLE IF NOT EXISTS emmy_profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
     fine_tuned_model TEXT, -- Optional provider model reference
@@ -8,4 +8,4 @@ CREATE TABLE IF NOT EXISTS echo_profiles (
     UNIQUE(subject_id)
 );
 
-COMMENT ON TABLE echo_profiles IS 'Stores the synthesized persona settings for a subject.';
+COMMENT ON TABLE emmy_profiles IS 'Stores the synthesized persona settings for a subject.';

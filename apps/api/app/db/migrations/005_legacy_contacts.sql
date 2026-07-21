@@ -12,4 +12,4 @@ CREATE TABLE IF NOT EXISTS legacy_contacts (
 CREATE INDEX IF NOT EXISTS idx_legacy_contacts_subject_id ON legacy_contacts(subject_id);
 CREATE INDEX IF NOT EXISTS idx_legacy_contacts_user_id ON legacy_contacts(user_id);
 
-COMMENT ON TABLE legacy_contacts IS 'Manages access control for family members communicating with an Echo.';
+COMMENT ON TABLE legacy_contacts IS 'Manages access control for family members communicating with Emmy.';

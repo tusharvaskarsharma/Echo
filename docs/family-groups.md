@@ -1,6 +1,6 @@
 # Family Groups
 
-Family Groups let an Echo owner grant their complete memory map to selected groups. Memories remain private unless the owner enables sharing for a specific group. Joining is invitation-only: no username lookup can add a member automatically.
+Family Groups let an Emmy owner grant their complete memory map to selected groups. Memories remain private unless the owner enables sharing for a specific group. Joining is invitation-only: no username lookup can add a member automatically.
 
 ## Security model
 
@@ -10,7 +10,7 @@ Family Groups let an Echo owner grant their complete memory map to selected grou
 - A `group_members` row for a recipient can be inserted only after their invitation reaches `accepted`; pending, declined, and expired users have no shared-memory permission.
 - A database trigger ensures a group can grant only its owner's memory map, and only the actual owner can hold the `owner` member role.
 - The API checks authenticated membership for every group, shared-memory, shared-mind, and shared-chat request. The selected owner from the browser is only a selector, never authority.
-- Echo resolves the target owner before retrieval. It queries that owner's subject namespace only and scopes citations and Mind Model reads to that owner.
+- Emmy resolves the target owner before retrieval. It queries that owner's subject namespace only and scopes citations and Mind Model reads to that owner.
 
 ## Deployment
 
@@ -18,8 +18,8 @@ The API migration runner applies `apps/api/app/db/migrations/020_family_groups.s
 
 ## User flow
 
-1. New accounts choose a 3–30 character lowercase username at signup. Existing users without a username are redirected to onboarding.
+1. New accounts choose a 3Ã¢â‚¬â€œ30 character lowercase username at signup. Existing users without a username are redirected to onboarding.
 2. An owner creates a group, confirms an exact username search, and sends an invitation.
 3. The recipient accepts or declines the invitation from **Invitations**. Pending invitations expire after seven days.
 4. The owner turns on **Share my memory map** for that group. Only accepted members gain access.
-5. Accepted members choose the owner's name under **Memory source** in Echo. Switching source resets conversation history and uses only the selected, permitted owner context.
+5. Accepted members choose the owner's name under **Memory source** in Emmy. Switching source resets conversation history and uses only the selected, permitted owner context.

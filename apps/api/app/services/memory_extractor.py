@@ -93,7 +93,7 @@ class ExtractedMemory(BaseModel):
 
 
 class IndexedSemanticMemory(SemanticMemory):
-    """A semantic memory matched to one immutable story unit supplied by Echo."""
+    """A semantic memory matched to one immutable story unit supplied by Emmy."""
 
     source_index: int = Field(ge=0)
 
@@ -118,7 +118,7 @@ class MemoryExtractorService:
             return []
 
         prompt = f"""
-You are the Memory Processor for ECHO. Convert the raw conversation transcript
+You are the Memory Processor for EMMY. Convert the raw conversation transcript
 below into ONE structured semantic memory optimized for vector search and
 long-term retrieval.
 
@@ -191,7 +191,7 @@ Transcript:
         async def extract_batch(batch: list[tuple[int, str]]) -> dict[int, ExtractedMemory]:
             sources = "\n\n".join(f"SOURCE {index}:\n{text}" for index, text in batch)
             prompt = f"""
-You are ECHO's structured memory processor. Each SOURCE below is a single,
+You are EMMY's structured memory processor. Each SOURCE below is a single,
 complete interview question-and-answer or life story. Return a JSON object:
 {{"memories": [ ... ]}}. Create at most one record per SOURCE and never merge
 facts between sources. Omit a source only when it contains no personal fact.

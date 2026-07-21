@@ -5,18 +5,21 @@ import asyncio
 import pytest
 from fastapi import HTTPException
 
-import app.routers.echo_conversation as echo_module
-from app.routers.echo_conversation import EchoConversationRequest, conversation
+import app.routers.emmy_conversation as emmy_module
+from app.routers.emmy_conversation import EmmyConversationRequest, conversation
 from app.services.groq_service import GroqUnavailableError
 
 
 class FakeConnection:
-    def __init__(self, *, memories=1, chunks=1, indexed=1):
+    def __init__(self, *, memories=1, chunks=1, indexed=1, identity=None):
         self.memories, self.chunks, self.indexed = memories, chunks, indexed
+        self.identity = identity
 
     async def fetchrow(self, query, *_args):
         if "FROM subjects" in query:
             return {"id": "owner-1", "user_id": "owner-1", "full_name": "Test"}
+        if "FROM public.identity_profiles" in query:
+            return self.identity
         if "memory_count" in query:
             return {"memory_count": self.memories, "chunk_count": self.chunks, "indexed_chunk_count": self.indexed}
         if "mind_model_snapshots" in query:
@@ -48,12 +51,12 @@ def test_malformed_cognitive_plan_falls_back_to_final_grounded_generation(monkey
             assert messages[-1]["content"] == "How did I meet my wife?"
             return "You met Neha through a mutual friend while working at a railway workshop."
 
-    monkeypatch.setattr(echo_module, "RetrievalService", FakeRetrieval)
-    monkeypatch.setattr(echo_module, "CognitiveEngineService", FailingPlanner)
-    monkeypatch.setattr(echo_module, "GroqService", FakeGroq)
+    monkeypatch.setattr(emmy_module, "RetrievalService", FakeRetrieval)
+    monkeypatch.setattr(emmy_module, "CognitiveEngineService", FailingPlanner)
+    monkeypatch.setattr(emmy_module, "GroqService", FakeGroq)
 
     response = asyncio.run(conversation(
-        EchoConversationRequest(question="How did I meet my wife?"),
+        EmmyConversationRequest(question="How did I meet my wife?"),
         {"sub": "owner-1"}, FakeConnection(),
     ))
 
@@ -67,14 +70,29 @@ def test_empty_archive_returns_helpful_200_response(monkeypatch):
         async def retrieve_memories(self, *_args, **_kwargs):
             raise AssertionError("empty archive must not trigger vector retrieval")
 
-    monkeypatch.setattr(echo_module, "RetrievalService", NeverRetrieve)
+    monkeypatch.setattr(emmy_module, "RetrievalService", NeverRetrieve)
     response = asyncio.run(conversation(
-        EchoConversationRequest(question="What did my father do?"),
+        EmmyConversationRequest(question="What did my father do?"),
         {"sub": "owner-1"}, FakeConnection(memories=0, chunks=0, indexed=0),
     ))
 
     assert response.confidence == 0
     assert "Record a few conversations" in response.text
+
+
+def test_identity_question_bypasses_semantic_retrieval(monkeypatch):
+    class NeverRetrieve:
+        async def retrieve_memories(self, *_args, **_kwargs):
+            raise AssertionError("identity questions must not invoke semantic retrieval")
+
+    monkeypatch.setattr(emmy_module, "RetrievalService", NeverRetrieve)
+    response = asyncio.run(conversation(
+        EmmyConversationRequest(question="What is your occupation?"),
+        {"sub": "owner-1"}, FakeConnection(identity={"user_id": "owner-1", "occupation": "School teacher", "privacy_settings": {"shared_fields": []}}),
+    ))
+
+    assert response.text == "Their occupation is School teacher."
+    assert response.confidence == 0.98
 
 
 def test_chunks_can_answer_through_keyword_fallback_before_vector_indexing(monkeypatch):
@@ -90,11 +108,11 @@ def test_chunks_can_answer_through_keyword_fallback_before_vector_indexing(monke
         async def complete(self, *_args, **_kwargs):
             return "You met Neha through a mutual friend."
 
-    monkeypatch.setattr(echo_module, "RetrievalService", KeywordRetrieval)
-    monkeypatch.setattr(echo_module, "CognitiveEngineService", FailingPlanner)
-    monkeypatch.setattr(echo_module, "GroqService", FakeGroq)
+    monkeypatch.setattr(emmy_module, "RetrievalService", KeywordRetrieval)
+    monkeypatch.setattr(emmy_module, "CognitiveEngineService", FailingPlanner)
+    monkeypatch.setattr(emmy_module, "GroqService", FakeGroq)
     response = asyncio.run(conversation(
-        EchoConversationRequest(question="How did I meet my wife?"),
+        EmmyConversationRequest(question="How did I meet my wife?"),
         {"sub": "owner-1"}, FakeConnection(memories=1, chunks=1, indexed=0),
     ))
 
@@ -114,13 +132,13 @@ def test_only_final_provider_unavailability_returns_503(monkeypatch):
         async def complete(self, *_args, **_kwargs):
             raise GroqUnavailableError("provider timeout")
 
-    monkeypatch.setattr(echo_module, "RetrievalService", FakeRetrieval)
-    monkeypatch.setattr(echo_module, "CognitiveEngineService", FailingPlanner)
-    monkeypatch.setattr(echo_module, "GroqService", UnavailableGroq)
+    monkeypatch.setattr(emmy_module, "RetrievalService", FakeRetrieval)
+    monkeypatch.setattr(emmy_module, "CognitiveEngineService", FailingPlanner)
+    monkeypatch.setattr(emmy_module, "GroqService", UnavailableGroq)
 
     with pytest.raises(HTTPException) as raised:
         asyncio.run(conversation(
-            EchoConversationRequest(question="How did I meet my wife?"),
+            EmmyConversationRequest(question="How did I meet my wife?"),
             {"sub": "owner-1"}, FakeConnection(),
         ))
     assert raised.value.status_code == 503

@@ -6,7 +6,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen p-6 md:p-12 max-w-6xl mx-auto flex flex-col gap-12 bg-background relative overflow-hidden">
       <header className="flex justify-between items-center w-full z-10 relative">
-        <h1 className="text-5xl font-serif text-primary tracking-tight">Echo.</h1>
+        <h1 className="text-5xl font-serif text-primary tracking-tight">Emmy.</h1>
         <Link href="/legacy" className="clay-button p-4 text-text/70">
           <Settings className="w-6 h-6" />
         </Link>

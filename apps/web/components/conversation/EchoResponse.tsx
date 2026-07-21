@@ -1,1 +1,0 @@
-export const EchoResponse = () => <div>Response</div>

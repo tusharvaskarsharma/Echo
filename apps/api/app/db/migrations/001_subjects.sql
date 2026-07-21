@@ -9,4 +9,4 @@ CREATE TABLE IF NOT EXISTS subjects (
 );
 
 -- Comments for RLS and schema understanding
-COMMENT ON TABLE subjects IS 'Stores information about the person being interviewed for the Echo.';
+COMMENT ON TABLE subjects IS 'Stores information about the person being interviewed for Emmy.';

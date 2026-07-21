@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from app.auth.dependencies import get_current_user
 from app.db.client import get_db
 from app.models.memory import MemoryFragment
-from app.routers.echo_conversation import ConversationHistoryItem, EchoConversationRequest, conversation
+from app.routers.emmy_conversation import ConversationHistoryItem, EmmyConversationRequest, conversation
 from app.services.username_service import normalize_username, username_error
 
 
@@ -542,7 +542,7 @@ async def _respond_to_invitation(
                 invitation["group_id"], recipient_id,
             )
         result = _invitation_dict({**dict(invitation), **dict(updated)})
-        result["message"] = "Invitation accepted. You can now access this Echo." if response == "accepted" else "Invitation declined."
+        result["message"] = "Invitation accepted. You can now access this Emmy." if response == "accepted" else "Invitation declined."
         return result
 
 
@@ -590,7 +590,7 @@ async def shared_users(
         raise HTTPException(status_code=503, detail="Shared users are temporarily unavailable") from error
     return [{
         "owner_id": str(row["owner_id"]), "subject_id": str(row["subject_id"]) if row["subject_id"] else None,
-        "username": row["username"], "display_name": row["full_name"] or row["username"] or "Shared Echo",
+        "username": row["username"], "display_name": row["full_name"] or row["username"] or "Shared Emmy",
     } for row in rows]
 
 
@@ -614,7 +614,7 @@ async def shared_mind_model(
     conn: Annotated[asyncpg.Connection, Depends(get_db)],
 ) -> dict | None:
     if not await _can_access_owner(conn, str(user["sub"]), owner_id):
-        raise HTTPException(status_code=403, detail="You do not have access to this Echo")
+        raise HTTPException(status_code=403, detail="You do not have access to this Emmy")
     row = await conn.fetchrow(
         "SELECT model FROM public.mind_model_snapshots WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1",
         owner_id,
@@ -623,16 +623,16 @@ async def shared_mind_model(
 
 
 @shared_router.post("/chat/shared")
-async def chat_with_shared_echo(
+async def chat_with_shared_emmy(
     payload: SharedChatRequest,
     user: Annotated[dict, Depends(get_current_user)],
     conn: Annotated[asyncpg.Connection, Depends(get_db)],
 ):
     """Compatibility endpoint for chatting with an authorised shared owner."""
     if not await _can_access_owner(conn, str(user["sub"]), payload.owner_id):
-        raise HTTPException(status_code=403, detail="You do not have access to this Echo")
+        raise HTTPException(status_code=403, detail="You do not have access to this Emmy")
     return await conversation(
-        EchoConversationRequest(
+        EmmyConversationRequest(
             question=payload.question,
             conversation_history=payload.conversation_history,
             subject_id=str(payload.owner_id),

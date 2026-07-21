@@ -1,4 +1,4 @@
-from app.routers.echo_conversation import _casual_response
+from app.routers.emmy_conversation import _casual_response
 
 
 def test_casual_conversation_is_not_forced_through_memory_retrieval():

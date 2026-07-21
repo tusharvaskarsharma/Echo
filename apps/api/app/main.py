@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from .config import get_settings
 
-from .routers import sessions, memories, echo, echo_conversation, finetune, auth, realtime, mind, profile, groups
+from .routers import sessions, memories, emmy, emmy_conversation, finetune, auth, realtime, mind, profile, groups, identity
 from .db.client import db_client
 from .auth.middleware import AuthMiddleware
 
@@ -16,7 +16,7 @@ async def lifespan(app: FastAPI):
     # Clean up here
     await db_client.disconnect()
 
-app = FastAPI(title="Echo API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Emmy API", version="0.1.0", lifespan=lifespan)
 settings = get_settings()
 cors_origins = settings.cors_origin_list
 
@@ -67,14 +67,15 @@ def health_pinecone():
 app.include_router(auth.router)
 app.include_router(profile.router)
 app.include_router(profile.privacy_router)
+app.include_router(identity.router)
 app.include_router(groups.router)
 app.include_router(groups.shared_router)
 # Backward-compatible account deletion endpoint; the canonical endpoint is /auth/account.
 app.add_api_route("/account", auth.delete_account, methods=["DELETE"], status_code=204)
 app.include_router(sessions.router)
 app.include_router(memories.router)
-app.include_router(echo.router)
-app.include_router(echo_conversation.router)
+app.include_router(emmy.router)
+app.include_router(emmy_conversation.router)
 app.include_router(finetune.router)
 app.include_router(realtime.router)
 app.include_router(mind.router)

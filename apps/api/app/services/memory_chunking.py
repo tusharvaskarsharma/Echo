@@ -1,4 +1,4 @@
-"""Story-preserving structured units and retrieval chunks for Echo memories."""
+"""Story-preserving structured units and retrieval chunks for Emmy memories."""
 
 from __future__ import annotations
 
@@ -31,8 +31,8 @@ STOP_WORDS = frozenset({
     "a", "an", "and", "are", "as", "at", "be", "by", "did", "do", "for", "from", "how", "i", "in", "is",
     "it", "me", "my", "of", "on", "or", "that", "the", "their", "they", "to", "was", "what", "when", "who", "with", "you", "your",
 })
-SPEAKER_LINE = re.compile(r"^(?:echo|interviewer|question|q|assistant|user|you|answer|a)\s*:\s*", re.IGNORECASE)
-QUESTION_LINE = re.compile(r"^(?:echo|interviewer|question|q|assistant)\s*:\s*(.+)$", re.IGNORECASE)
+SPEAKER_LINE = re.compile(r"^(?:emmy|interviewer|question|q|assistant|user|you|answer|a)\s*:\s*", re.IGNORECASE)
+QUESTION_LINE = re.compile(r"^(?:emmy|interviewer|question|q|assistant)\s*:\s*(.+)$", re.IGNORECASE)
 ANSWER_LINE = re.compile(r"^(?:user|you|answer|a)\s*:\s*(.+)$", re.IGNORECASE)
 SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"'])")
 WORD = re.compile(r"[a-zA-Z][a-zA-Z'-]{1,}")

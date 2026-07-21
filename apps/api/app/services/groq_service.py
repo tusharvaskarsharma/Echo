@@ -1,4 +1,4 @@
-"""Small Groq REST client used by Echo's text, JSON, and transcription paths."""
+"""Small Groq REST client used by Emmy's text, JSON, and transcription paths."""
 
 import json
 import logging

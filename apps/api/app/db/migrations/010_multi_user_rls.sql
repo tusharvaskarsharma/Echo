@@ -31,8 +31,8 @@ ALTER TABLE subjects ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
 -- memories
 ALTER TABLE memories ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
--- echo_profiles
-ALTER TABLE echo_profiles ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+-- emmy_profiles
+ALTER TABLE emmy_profiles ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
 
 -- legacy_contacts already has user_id, just add foreign key if missing
 DO $$
@@ -68,7 +68,7 @@ ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subjects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE memories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE echo_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE emmy_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE legacy_contacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE conversation_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE finetune_jobs ENABLE ROW LEVEL SECURITY;
@@ -97,9 +97,9 @@ CREATE POLICY "Users can manage own sessions" ON sessions FOR ALL USING (auth.ui
 DROP POLICY IF EXISTS "Users can manage own memories" ON memories;
 CREATE POLICY "Users can manage own memories" ON memories FOR ALL USING (auth.uid() = user_id);
 
--- Echo Profiles
-DROP POLICY IF EXISTS "Users can manage own echo profiles" ON echo_profiles;
-CREATE POLICY "Users can manage own echo profiles" ON echo_profiles FOR ALL USING (auth.uid() = user_id);
+-- Emmy Profiles
+DROP POLICY IF EXISTS "Users can manage own emmy profiles" ON emmy_profiles;
+CREATE POLICY "Users can manage own emmy profiles" ON emmy_profiles FOR ALL USING (auth.uid() = user_id);
 
 -- Legacy Contacts
 DROP POLICY IF EXISTS "Users can manage own legacy contacts" ON legacy_contacts;

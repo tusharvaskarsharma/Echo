@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi import HTTPException
 
-from app.routers.echo_conversation import _resolve_access
+from app.routers.emmy_conversation import _resolve_access
 from app.routers.groups import (
     InvitationCreate,
     _can_access_owner,
@@ -59,7 +59,7 @@ def test_only_group_owner_can_change_membership_or_sharing() -> None:
     assert error.value.status_code == 403
 
 
-class EchoAccessConnection:
+class EmmyAccessConnection:
     def __init__(self, group_allowed: bool) -> None:
         self.group_allowed = group_allowed
 
@@ -75,11 +75,11 @@ class EchoAccessConnection:
         return self.group_allowed
 
 
-def test_echo_derives_the_selected_owner_and_requires_group_access() -> None:
-    result = asyncio.run(_resolve_access(EchoAccessConnection(True), "member", "owner"))
+def test_emmy_derives_the_selected_owner_and_requires_group_access() -> None:
+    result = asyncio.run(_resolve_access(EmmyAccessConnection(True), "member", "owner"))
     assert result == ("subject-owner", "Grandma", "group", "owner")
     with pytest.raises(HTTPException) as error:
-        asyncio.run(_resolve_access(EchoAccessConnection(False), "member", "owner"))
+        asyncio.run(_resolve_access(EmmyAccessConnection(False), "member", "owner"))
     assert error.value.status_code == 403
 
 

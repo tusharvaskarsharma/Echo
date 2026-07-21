@@ -1,10 +1,10 @@
-# ECHO Autonomous Life Interview Engine
+# EMMY Autonomous Life Interview Engine
 
 ## Purpose and limits
 
-The Autonomous Life Interview Engine (ALIE) turns ECHO from isolated interview sessions into a voluntary, long-horizon Digital Legacy Builder. It knows which **domains have little supported coverage**, recommends the next best conversation, and adapts after each interview.
+The Autonomous Life Interview Engine (ALIE) turns EMMY from isolated interview sessions into a voluntary, long-horizon Digital Legacy Builder. It knows which **domains have little supported coverage**, recommends the next best conversation, and adapts after each interview.
 
-It does not claim a person has an unshared memory, relative, event, regret, or belief. A coverage gap means only: *ECHO has insufficient eligible evidence in this domain.* The subject can skip, defer, suppress, or disable any domain at any time. Recommendations are invitations, never requirements.
+It does not claim a person has an unshared memory, relative, event, regret, or belief. A coverage gap means only: *EMMY has insufficient eligible evidence in this domain.* The subject can skip, defer, suppress, or disable any domain at any time. Recommendations are invitations, never requirements.
 
 ## System architecture
 
@@ -253,4 +253,4 @@ Rollout:
 - Completion reflects evidence coverage and confidence, not a claim about the person.
 - No family member can inspect or alter the subject's interview plans, gaps, or score without explicit future consent design.
 
-ALIE gives ECHO a respectful memory of its own learning process: it can discover what remains unexplored while leaving the subject in control of whether, when, and how to share it.
+ALIE gives EMMY a respectful memory of its own learning process: it can discover what remains unexplored while leaving the subject in control of whether, when, and how to share it.

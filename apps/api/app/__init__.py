@@ -1,2 +1,1 @@
-"""Echo FastAPI application."""
-
+"""Emmy FastAPI application."""

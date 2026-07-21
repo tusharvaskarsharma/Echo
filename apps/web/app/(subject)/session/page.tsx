@@ -34,7 +34,7 @@ export default function SessionPage() {
     return `${minutes}:${seconds}`;
   }, [timer]);
   const conversationContent = useMemo(
-    () => messages.map((message) => `${message.speaker === "echo" ? "Echo" : "You"}: ${message.text}`).join("\n"),
+    () => messages.map((message) => `${message.speaker === "emmy" ? "Emmy" : "You"}: ${message.text}`).join("\n"),
     [messages],
   );
   const canSave = Boolean(conversationContent.trim() || transcript.trim());
@@ -61,7 +61,7 @@ export default function SessionPage() {
       const recording = await finishRecording();
       if (sessionId) {
         // The recording contains only the microphone.  Save this browser-side
-        // Echo/User transcript first so every question stays paired with its
+        // Emmy/User transcript first so every question stays paired with its
         // answer in the indexed evidence.
         await api.saveSessionTranscript(sessionId, content);
         if (recording?.size) await api.uploadSessionAudio(sessionId, recording);
@@ -91,7 +91,7 @@ export default function SessionPage() {
               <ArrowLeft size={17} /> <span className="hidden sm:inline">Dashboard</span>
             </Link>
             <div className="h-7 w-px bg-primary/15" />
-            <div><p className="font-serif text-3xl leading-none text-primary">Echo.</p><p className="mt-1 text-xs text-text/50">Private conversation</p></div>
+            <div><p className="font-serif text-3xl leading-none text-primary">Emmy.</p><p className="mt-1 text-xs text-text/50">Private conversation</p></div>
           </div>
           <div className="flex items-center gap-2 rounded-full border border-primary/10 bg-white/70 px-4 py-2 text-sm font-medium text-text/70 shadow-sm"><Circle size={8} className={isConnected ? "fill-success text-success" : "fill-text/30 text-text/30"} /> {formattedTime}</div>
         </header>
@@ -107,16 +107,16 @@ export default function SessionPage() {
               {(error || saveError) && <div className="mx-5 mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-5 text-red-700" role="alert">{error || saveError}</div>}
 
               <div ref={logRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5" aria-live="polite">
-                {!messages.length && <div className="mx-auto mt-10 max-w-md rounded-3xl border border-primary/10 bg-[#fcf7f3] p-6 text-center"><Sparkles className="mx-auto text-primary" size={24} /><p className="mt-3 font-serif text-2xl text-text">I&apos;m here to listen.</p><p className="mt-2 text-sm leading-6 text-text/65">Start a voice session or type a thought. Echo will respond and the dialogue will stay clearly organised here.</p></div>}
+                {!messages.length && <div className="mx-auto mt-10 max-w-md rounded-3xl border border-primary/10 bg-[#fcf7f3] p-6 text-center"><Sparkles className="mx-auto text-primary" size={24} /><p className="mt-3 font-serif text-2xl text-text">I&apos;m here to listen.</p><p className="mt-2 text-sm leading-6 text-text/65">Start a voice session or type a thought. Emmy will respond and the dialogue will stay clearly organised here.</p></div>}
                 {messages.map((message) => {
-                  const isEcho = message.speaker === "echo";
-                  return <article key={message.id} className={`flex gap-3 ${isEcho ? "justify-start" : "justify-end"}`}>
-                    {isEcho && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-serif text-white">E</div>}
-                    <div className={`max-w-[82%] rounded-2xl px-4 py-3 shadow-sm ${isEcho ? "rounded-tl-sm border border-primary/10 bg-[#fcf5f0] text-text" : "rounded-tr-sm bg-primary text-white"}`}>
-                      <p className={`text-xs font-semibold uppercase tracking-[0.12em] ${isEcho ? "text-primary" : "text-white/70"}`}>{isEcho ? "Echo" : "You"}</p>
+                  const isEmmy = message.speaker === "emmy";
+                  return <article key={message.id} className={`flex gap-3 ${isEmmy ? "justify-start" : "justify-end"}`}>
+                    {isEmmy && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-serif text-white">E</div>}
+                    <div className={`max-w-[82%] rounded-2xl px-4 py-3 shadow-sm ${isEmmy ? "rounded-tl-sm border border-primary/10 bg-[#fcf5f0] text-text" : "rounded-tr-sm bg-primary text-white"}`}>
+                      <p className={`text-xs font-semibold uppercase tracking-[0.12em] ${isEmmy ? "text-primary" : "text-white/70"}`}>{isEmmy ? "Emmy" : "You"}</p>
                       <p className="mt-1 whitespace-pre-wrap text-sm leading-6 sm:text-[15px]">{message.text}</p>
                     </div>
-                    {!isEcho && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-text">Y</div>}
+                    {!isEmmy && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-text">Y</div>}
                   </article>;
                 })}
               </div>
@@ -131,8 +131,8 @@ export default function SessionPage() {
             </section>
 
             <aside className="flex min-h-0 flex-col overflow-y-auto rounded-[24px] border border-primary/10 bg-[#fcf8f5]/90 p-5 shadow-sm">
-              <div className="text-center"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Voice studio</p><h2 className="mt-1 font-serif text-3xl text-text">{!isConnected ? "Ready when you are" : activeSpeaker === "echo" ? "Echo is speaking" : activeSpeaker === "subject" ? "Listening to you" : "Session active"}</h2></div>
-              <div className="flex flex-1 items-center justify-center py-3"><AudioOrb state={!isConnected ? "disconnected" : activeSpeaker === "echo" ? "speaking" : "listening"} amplitude={audioLevel} compact /></div>
+              <div className="text-center"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Voice studio</p><h2 className="mt-1 font-serif text-3xl text-text">{!isConnected ? "Ready when you are" : activeSpeaker === "emmy" ? "Emmy is speaking" : activeSpeaker === "subject" ? "Listening to you" : "Session active"}</h2></div>
+              <div className="flex flex-1 items-center justify-center py-3"><AudioOrb state={!isConnected ? "disconnected" : activeSpeaker === "emmy" ? "speaking" : "listening"} amplitude={audioLevel} compact /></div>
               <div className="rounded-2xl border border-primary/10 bg-white/70 p-4 text-center"><p className="text-sm font-medium text-text">{isConnected ? "Your microphone is on" : "Start when you feel ready"}</p><p className="mt-1 text-xs leading-5 text-text/55">You can speak naturally or type in the conversation panel.</p></div>
               <div className="mt-4"><SessionControls isConnected={isConnected} onConnect={startSession} onDisconnect={disconnect} /></div>
               <div className="mt-5 border-t border-primary/10 pt-5">

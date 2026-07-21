@@ -4,7 +4,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from app.models import (
-    Subject, Session, MemoryFragment, EchoProfile, 
+    Subject, Session, MemoryFragment, EmmyProfile,
     LegacyContact, ConversationHistory
 )
 from app.models.finetune import FinetuneJob
@@ -152,13 +152,13 @@ async def get_memory(conn: asyncpg.Connection, memory_id: UUID | str, user_id: U
 
 async def create_conversation_history(conn: asyncpg.Connection, history: ConversationHistory) -> ConversationHistory:
     query = """
-    INSERT INTO conversation_history (id, echo_profile_id, user_id, question, response, memory_ids, latency_ms, token_usage)
+    INSERT INTO conversation_history (id, emmy_profile_id, user_id, question, response, memory_ids, latency_ms, token_usage)
     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
     RETURNING *
     """
     row = await conn.fetchrow(
         query,
-        history.id, history.echo_profile_id, history.user_id, history.question,
+        history.id, history.emmy_profile_id, history.user_id, history.question,
         history.response, json.dumps(history.memory_ids), history.latency_ms, history.token_usage
     )
     if row:

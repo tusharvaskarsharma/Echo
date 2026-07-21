@@ -76,7 +76,7 @@ class SessionService:
         return updated
 
     async def save_transcript(self, session_id: str, transcript: str) -> Session:
-        """Store both Echo prompts and the user's answers as canonical evidence."""
+        """Store both Emmy prompts and the user's answers as canonical evidence."""
         cleaned = transcript.strip()
         if not cleaned:
             raise HTTPException(status_code=400, detail="The session transcript is empty")

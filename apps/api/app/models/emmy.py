@@ -3,7 +3,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from uuid import UUID
 from .memory import ConsentLevel
 
-class EchoProfile(BaseModel):
+class EmmyProfile(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID | str
     subject_id: UUID | str
@@ -23,7 +23,7 @@ class LegacyContact(BaseModel):
 class ConversationHistory(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID | str
-    echo_profile_id: UUID | str
+    emmy_profile_id: UUID | str
     user_id: UUID | str
     question: str
     response: str

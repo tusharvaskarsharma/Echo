@@ -159,7 +159,7 @@ async def index_memories(
         for chunk in chunks
     ]
     # Embedding the structured search text gives summary/category/entity terms
-    # semantic weight while the raw chunk remains the evidence sent to Echo.
+    # semantic weight while the raw chunk remains the evidence sent to Emmy.
     embeddings = await embedding_service.embed_texts([chunk.search_text for _memory, chunk in flat_pairs])
     if len(embeddings) != len(flat_pairs):
         raise RuntimeError("Embedding provider returned an incomplete chunk batch")

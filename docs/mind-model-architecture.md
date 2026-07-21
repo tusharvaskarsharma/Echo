@@ -1,8 +1,8 @@
-# ECHO Mind Model Architecture
+# EMMY Mind Model Architecture
 
 ## Purpose and boundary
 
-The Mind Model is a consent-gated cognitive layer added **on top of** ECHO's memory graph, Pinecone retrieval, persona generation, voice fingerprinting, and family conversation systems. It is not a general personality predictor and it never replaces a source memory.
+The Mind Model is a consent-gated cognitive layer added **on top of** EMMY's memory graph, Pinecone retrieval, persona generation, voice fingerprinting, and family conversation systems. It is not a general personality predictor and it never replaces a source memory.
 
 Its job is to preserve supported patterns in how a subject explains choices, expresses values, responds emotionally, communicates, and gives advice. Each pattern remains traceable to the memories and interviews that support it. A model with insufficient evidence must say: **"I don't know enough about how they would think about this."**
 
@@ -173,14 +173,14 @@ The new response contract contains:
 }
 ```
 
-If no adequate memory or Mind Model evidence is eligible, `answer` is the explicit uncertainty response and `limitations` explains that ECHO lacks enough evidence. The orchestrator must never silently substitute generic model knowledge for a subject opinion.
+If no adequate memory or Mind Model evidence is eligible, `answer` is the explicit uncertainty response and `limitations` explains that EMMY lacks enough evidence. The orchestrator must never silently substitute generic model knowledge for a subject opinion.
 
 ## Cognitive context prompt
 
 The following is an input contract for the Groq persona service. It is assembled server-side after authorisation and source filtering.
 
 ```text
-You are ECHO, a grounded representation of {subject_name}, not an omniscient simulation.
+You are EMMY, a grounded representation of {subject_name}, not an omniscient simulation.
 
 Rules:
 1. Use only the cited source memories and active mind traits below.
@@ -220,7 +220,7 @@ All endpoints require a validated Supabase JWT. Subject endpoints require `auth.
 | `PATCH /mind-profile/traits/{type}/{id}` | Subject confirms, edits, hides, or revokes a trait |
 | `GET /mind-profile/timeline` | Date-bounded evolution view with source counts |
 | `POST /interviews/cognitive-plan` | Builds a consent-safe next-question plan for cognitive discovery mode |
-| `POST /echo/{echo_id}/converse` | Existing route extended to return memory/mind/reasoning citations and confidence |
+| `POST /emmy/{emmy_id}/converse` | Existing route extended to return memory/mind/reasoning citations and confidence |
 
 Trait review endpoints must expose only evidence the subject owns. Family-facing conversation responses expose redacted source excerpts only when the underlying memory grants that contact's consent level.
 
@@ -251,4 +251,4 @@ The existing memory map remains the factual layer. Add a **Mind Map** view along
 4. Extend the conversation orchestrator with cognitive context and response citations.
 5. Enable family use only after evaluation thresholds, redaction tests, and revocation propagation tests pass.
 
-This sequence preserves ECHO's existing architecture while adding a bounded, explainable Digital Mind Preservation layer.
+This sequence preserves EMMY's existing architecture while adding a bounded, explainable Digital Mind Preservation layer.

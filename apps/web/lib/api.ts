@@ -1,4 +1,4 @@
-import type { ConsentLevel, FamilyGroup, GroupInvitation, GroupMember, Memory, Profile, SharedUser } from "./types";
+import type { ConsentLevel, FamilyGroup, GroupInvitation, GroupMember, IdentityProfile, Memory, Profile, SharedUser } from "./types";
 import { createClient } from "./supabase/client";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -86,6 +86,11 @@ export const api = {
   updatePrivacy: (share_data: boolean): Promise<{ share_data: boolean }> => request("/privacy", {
     method: "PATCH", body: JSON.stringify({ share_data }),
   }),
+  identity: (): Promise<IdentityProfile> => request("/identity"),
+  updateIdentity: (profile: Partial<IdentityProfile>): Promise<IdentityProfile> => request("/identity", {
+    method: "PUT", body: JSON.stringify(profile),
+  }),
+  sharedIdentity: (ownerId: string): Promise<IdentityProfile> => request(`/identity/${ownerId}`),
   sharedMemories: async (ownerId: string): Promise<Memory[]> => normalizeMemories(await request(`/shared-memories/${ownerId}`)),
   sharedMind: (ownerId: string): Promise<any> => request(`/shared-mind/${ownerId}`),
   
@@ -114,7 +119,7 @@ export const api = {
     const { data: { session } } = await createClient().auth.getSession();
     if (!session) throw new Error("You must be signed in.");
     const form = new FormData();
-    form.append("audio", audio, "echo-session.webm");
+    form.append("audio", audio, "emmy-session.webm");
     const response = await fetch(`${API_BASE}/sessions/${sessionId}/audio`, {
       method: "PUT",
       headers: { Authorization: `Bearer ${session.access_token}` },

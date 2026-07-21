@@ -83,3 +83,46 @@ export type SharedUser = {
   username: string | null;
   display_name: string;
 };
+
+export type IdentityPrivacySettings = {
+  shared_fields: string[];
+};
+
+export type IdentityProfile = {
+  user_id: string;
+  full_name: string | null;
+  preferred_name: string | null;
+  date_of_birth: string | null;
+  gender: string | null;
+  pronouns: string | null;
+  occupation: string | null;
+  education: string | null;
+  nationality: string | null;
+  religion: string | null;
+  languages: string[];
+  hometown: string | null;
+  current_city: string | null;
+  biography: string | null;
+  spouse: string | null;
+  children: string[];
+  parents: string[];
+  siblings: string[];
+  grandchildren: string[];
+  pets: string[];
+  website: string | null;
+  social_links: Record<string, string>;
+  email: string | null;
+  values: string[];
+  motto: string | null;
+  favorite_quote: string | null;
+  favorite_song: string | null;
+  favorite_book: string | null;
+  favorite_food: string | null;
+  favorite_place: string | null;
+  blood_group: string | null;
+  allergies: string | null;
+  medical_notes: string | null;
+  privacy_settings: IdentityPrivacySettings;
+  created_at?: string | null;
+  updated_at?: string | null;
+};

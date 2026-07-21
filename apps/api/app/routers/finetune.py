@@ -26,7 +26,7 @@ async def get_finetune_status(
     enabled = (sessions_count >= 3) and (memories_count >= 150)
     
     # Get active model
-    profile = await conn.fetchrow("SELECT fine_tuned_model FROM echo_profiles WHERE user_id = $1", subject_id)
+    profile = await conn.fetchrow("SELECT fine_tuned_model FROM emmy_profiles WHERE user_id = $1", subject_id)
     model_id = profile["fine_tuned_model"] if profile else None
     
     latest_job = await repositories.get_latest_finetune_job(conn, subject_id)

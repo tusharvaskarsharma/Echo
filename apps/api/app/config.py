@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str
     pinecone_api_key: str
     pinecone_index: str
-    pinecone_index_name: str = "echo-memories"
+    pinecone_index_name: str = "emmy-memories"
     pinecone_environment: str = "us-east-1"
     @property
     def missing_live_integrations(self) -> list[str]:

@@ -1,5 +1,5 @@
 {
-  "name": "echo",
+  "name": "emmy",
   "private": true,
   "packageManager": "pnpm@10.13.1",
   "scripts": {
@@ -9,4 +9,3 @@
   },
   "workspaces": ["apps/*", "packages/*"]
 }
-

@@ -17,7 +17,8 @@ from .schema import (
 from .subject import Subject
 from .session import Session, SessionCreate, SessionUpdate, PaginatedSessionResponse
 from .memory import MemoryFragment, MemoryPatch, DraftMemoryCreate
-from .echo import EchoProfile, ConversationHistory, LegacyContact
+from .emmy import EmmyProfile, ConversationHistory, LegacyContact
 from .finetune import FinetuneJob
+from .identity import IdentityProfileResponse, IdentityProfileUpdate, IdentityPrivacySettings
 
 # Keep some compatibility for old imports if needed during transition, though it's better to update imports.

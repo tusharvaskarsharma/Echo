@@ -1,8 +1,8 @@
-# ECHO Cognitive Reasoning Engine
+# EMMY Cognitive Reasoning Engine
 
 ## Purpose
 
-The Cognitive Engine is the response-time reasoning layer above ECHO's Memory Graph, Mind Model, Persona Model, RAG, Voice Model, Consent Architecture, and Confidence Engine. It does not make ECHO more speculative. It makes the order of operations explicit:
+The Cognitive Engine is the response-time reasoning layer above EMMY's Memory Graph, Mind Model, Persona Model, RAG, Voice Model, Consent Architecture, and Confidence Engine. It does not make EMMY more speculative. It makes the order of operations explicit:
 
 ```text
 Question -> intent -> authorised evidence -> relationship and time context
@@ -246,4 +246,4 @@ Deployment stages:
 - A revoked memory or trait is removed from future cognitive evidence ledgers within the defined propagation SLO.
 - Debug data contains no raw chain-of-thought.
 
-This turns ECHO into a bounded Digital Mind: it retrieves what was lived, plans according to supported cognitive patterns, and explains why it can answer without pretending to know more than the evidence allows.
+This turns EMMY into a bounded Digital Mind: it retrieves what was lived, plans according to supported cognitive patterns, and explains why it can answer without pretending to know more than the evidence allows.

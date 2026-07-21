@@ -9,12 +9,12 @@ type Node = Memory & d3.SimulationNodeDatum & { radius: number; topic: string; e
 type Link = d3.SimulationLinkDatum<Node> & { source: string | Node; target: string | Node; weight: number };
 
 const eraColours: Record<string, string> = {
-  "Before 1980": "#755c9f", "1980s–1990s": "#4c8695", "2000s": "#bd775b",
+  "Before 1980": "#755c9f", "1980sÃ¢â‚¬â€œ1990s": "#4c8695", "2000s": "#bd775b",
   "2010s": "#bc9b4b", "2020s+": "#728c69", Undated: "#9a8177",
 };
 
 const topicOf = (memory: Memory) => memory.topics.find(Boolean)?.trim() || "Uncategorised";
-const words = (value: string) => value.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((word) => word.length > 2 && word !== "echo");
+const words = (value: string) => value.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((word) => word.length > 2 && word !== "emmy");
 const setOf = (items: string[]) => new Set(items.map((item) => item.toLowerCase().trim()).filter(Boolean));
 const overlap = (left: Set<string>, right: Set<string>) => {
   const union = new Set([...left, ...right]);
@@ -37,7 +37,7 @@ const eraOf = (time: string) => {
   const year = Number(time?.match(/(?:19|20)\d{2}/)?.[0]);
   if (!year) return "Undated";
   if (year < 1980) return "Before 1980";
-  if (year < 2000) return "1980s–1990s";
+  if (year < 2000) return "1980sÃ¢â‚¬â€œ1990s";
   if (year < 2010) return "2000s";
   return year < 2020 ? "2010s" : "2020s+";
 };
@@ -97,7 +97,7 @@ export default function MemoryGraph({ memories, onNodeClick, selectedId }: { mem
         const { x, y } = point(topic);
         labels.append("text").attr("x", x).attr("y", y - 64).attr("text-anchor", "middle")
           .attr("fill", "#806f68").attr("font-size", 12).attr("font-weight", 600)
-          .text(topic.length > 20 ? `${topic.slice(0, 19)}…` : topic);
+          .text(topic.length > 20 ? `${topic.slice(0, 19)}Ã¢â‚¬Â¦` : topic);
       });
       const circles = svg.append("g").selectAll<SVGCircleElement, Node>("circle")
         .data(nodes, (item) => item.id).join("circle")
@@ -111,7 +111,7 @@ export default function MemoryGraph({ memories, onNodeClick, selectedId }: { mem
         .style("cursor", "pointer")
         .on("click", (_event, item) => clickRef.current(item))
         .on("keydown", (event, item) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); clickRef.current(item); } });
-      circles.append("title").text((item) => `${item.label} · ${item.era}\n${item.content.slice(0, 100)}`);
+      circles.append("title").text((item) => `${item.label} Ã‚Â· ${item.era}\n${item.content.slice(0, 100)}`);
       const nodeLabels = svg.append("g").selectAll<SVGTextElement, Node>("text").data(nodes, (item) => item.id).join("text")
         .attr("text-anchor", "middle").attr("fill", "#5e4a43").attr("font-size", 12).attr("font-weight", 600)
         .attr("pointer-events", "none").text((item) => item.label);

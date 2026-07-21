@@ -1,5 +1,5 @@
 {
-  "name": "@echo/shared-types",
+  "name": "@emmy/shared-types",
   "version": "0.1.0",
   "private": true,
   "main": "./index.ts",

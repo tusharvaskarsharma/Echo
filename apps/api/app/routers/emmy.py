@@ -9,24 +9,24 @@ import os
 from app.auth.dependencies import get_current_user
 from app.db.client import get_db
 from app.services.chat_service import ChatService
-from app.models.echo import ConverseResponse
+from app.models.emmy import ConverseResponse
 
 router = APIRouter(
-    prefix='/echo', 
-    tags=['echo'],
+    prefix='/emmy',
+    tags=['emmy'],
     dependencies=[Depends(get_current_user)]
 )
 
 async def require_legacy_contact(
-    echo_id: str,
+    emmy_id: str,
     user: Annotated[dict, Depends(get_current_user)],
     conn: Annotated[asyncpg.Connection, Depends(get_db)]
 ) -> str:
     user_id = user.get("sub")
     
-    profile = await conn.fetchrow("SELECT subject_id, user_id FROM echo_profiles WHERE id = $1", echo_id)
+    profile = await conn.fetchrow("SELECT subject_id, user_id FROM emmy_profiles WHERE id = $1", emmy_id)
     if not profile:
-        raise HTTPException(status_code=404, detail="Echo profile not found")
+        raise HTTPException(status_code=404, detail="Emmy profile not found")
     if str(profile["user_id"]) == str(user_id):
         return "owner"
 
@@ -39,12 +39,12 @@ async def require_legacy_contact(
     return contact["access_level"]
 
 @router.post(
-    "/{echo_id}/converse",
+    "/{emmy_id}/converse",
     response_class=StreamingResponse,
     responses={200: {"content": {"text/event-stream": {}}}},
 )
 async def converse(
-    echo_id: str,
+    emmy_id: str,
     user: Annotated[dict, Depends(get_current_user)],
     access_level: Annotated[str, Depends(require_legacy_contact)],
     conn: Annotated[asyncpg.Connection, Depends(get_db)],
@@ -66,7 +66,7 @@ async def converse(
     # The ChatService will read the audio immediately in converse_stream so we can delete it right after we get the generator.
     try:
         stream_gen = await chat_service.converse_stream(
-            echo_id=echo_id,
+            emmy_id=emmy_id,
             user_id=user_id,
             access_level=access_level,
             text=text,

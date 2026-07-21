@@ -25,7 +25,7 @@ class CognitiveEngineService:
     ) -> CognitiveReasoningPlan:
         memory_ids = {str(memory["id"]) for memory in retrieved_memories}
         prompt = f"""
-You are ECHO's Cognitive Reasoning Engine. Do not answer the user. Produce only an evidence-grounded JSON plan.
+You are EMMY's Cognitive Reasoning Engine. Do not answer the user. Produce only an evidence-grounded JSON plan.
 Use only the retrieved memories, Mind Model, relationship context, timeline context, and conversation history below.
 Never invent facts or traits. Ignore irrelevant memories. Resolve conflicts by preserving both time-bound viewpoints.
 Intent must be factual_memory, emotional_support, advice, opinion, storytelling, reflection, life_lesson, relationship, preference, identity, event_recall, hypothetical, or unknown.

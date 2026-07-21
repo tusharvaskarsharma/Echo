@@ -1,4 +1,4 @@
-"""Regression coverage for the factual interview questions Echo must answer."""
+"""Regression coverage for the factual interview questions Emmy must answer."""
 
 import asyncio
 from uuid import uuid4
@@ -10,31 +10,31 @@ from app.services.retrieval_service import RetrievalService
 
 
 INTERVIEW = """
-Echo: How did you meet your wife?
+Emmy: How did you meet your wife?
 You: I met Neha through a mutual friend while working at a railway workshop.
 
-Echo: What did your father and mother do?
+Emmy: What did your father and mother do?
 You: My father was a school teacher. My mother stitched clothes for neighbors.
 
-Echo: What lesson did your parents teach you?
+Emmy: What lesson did your parents teach you?
 You: They taught me character over success, honesty, and resilience.
 
-Echo: What is your biggest regret and proudest moment?
+Emmy: What is your biggest regret and proudest moment?
 You: I worked too much and missed my children's teenage years. I am proud that my daughter became a doctor and my son started a company.
 
-Echo: What hobbies do you enjoy?
+Emmy: What hobbies do you enjoy?
 You: I enjoy gardening, fixing things, making tea, and listening to Kishore Kumar songs.
 
-Echo: What do you hope your grandchildren remember about you?
+Emmy: What do you hope your grandchildren remember about you?
 You: I hope they remember kindness, being present, slow walks, butterflies, tea, and listening.
 
-Echo: Why did you enjoy collecting seashells?
+Emmy: Why did you enjoy collecting seashells?
 You: I loved collecting seashells with my father after storms because he said every shell had its own journey.
 
-Echo: Who was Daniel?
+Emmy: Who was Daniel?
 You: Daniel was my older brother and the person who taught me to repair bicycles.
 
-Echo: What made you love books?
+Emmy: What made you love books?
 You: My mother took me to the town library every Saturday, and books made the world feel bigger.
 """.strip()
 
@@ -47,7 +47,7 @@ def _memory() -> MemoryFragment:
     )
 
 
-def test_chunking_keeps_an_echo_question_with_its_answer():
+def test_chunking_keeps_an_emmy_question_with_its_answer():
     chunks = build_memory_chunks(_memory())
 
     assert len(chunks) == 9
