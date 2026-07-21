@@ -41,14 +41,18 @@ export const api = {
     // dashboard depend on a direct `profiles` query, since a newly provisioned
     // Supabase project may not have its RLS migration applied yet.
     const metadata = user.user_metadata ?? {};
+    // The display name is available in the authenticated account, while the
+    // durable totals must be calculated server-side from owned rows.  A
+    // summary outage must not prevent someone from opening their dashboard.
+    const summary = await request("/profile/summary").catch(() => ({ session_count: 0, memory_count: 0 }));
     return {
       id: user.id,
       name: metadata.full_name || metadata.name || user.email || "Your legacy",
       age: 0,
       voice: metadata.voice_preferences?.preset || "alloy",
       bio: metadata.bio || "Your private living legacy.",
-      session_count: 0,
-      memory_count: 0
+      session_count: Number.isInteger(summary.session_count) ? summary.session_count : 0,
+      memory_count: Number.isInteger(summary.memory_count) ? summary.memory_count : 0
     };
   },
   

@@ -84,6 +84,32 @@ async def _upsert_privacy_settings(
     )
 
 
+@router.get("/summary")
+async def get_dashboard_summary(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    conn: Annotated[asyncpg.Connection, Depends(get_db)],
+) -> dict[str, int]:
+    """Return the authenticated owner's completed-recording and memory totals."""
+    try:
+        row = await conn.fetchrow(
+            """
+            SELECT
+              COUNT(*) FILTER (WHERE status = 'completed')::int AS session_count,
+              (SELECT COUNT(*)::int FROM public.memories WHERE user_id = $1) AS memory_count
+            FROM public.sessions
+            WHERE user_id = $1
+            """,
+            current_user["sub"],
+        )
+        return {
+            "session_count": int(row["session_count"] or 0),
+            "memory_count": int(row["memory_count"] or 0),
+        }
+    except asyncpg.PostgresError as error:
+        logger.exception("Failed to load dashboard summary for user %s", current_user["sub"])
+        raise HTTPException(status_code=503, detail="Dashboard totals are temporarily unavailable") from error
+
+
 @router.get("/check-username")
 async def check_username(
     username: str = Query(..., max_length=200),
