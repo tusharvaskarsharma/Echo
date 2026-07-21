@@ -150,15 +150,24 @@ async def update_memory_consent(
         except ValueError as error:
             raise HTTPException(status_code=404, detail="Memory not found") from error
     
-    memory = await repositories.get_memory(conn, memory_id, subject_id)
-    if not memory:
-        raise HTTPException(status_code=404, detail="Memory not found")
-        
-    updated = await repositories.update_memory(conn, memory_id, subject_id, {"consent_level": patch.consent_level.value})
-    if not updated:
-        # The row could have been deleted after the owned read above.
-        raise HTTPException(status_code=404, detail="Memory not found")
-    
-    await sync_memory_consent(str(updated.id), str(subject_id))
+    try:
+        memory = await repositories.get_memory(conn, memory_id, subject_id)
+        if not memory:
+            raise HTTPException(status_code=404, detail="Memory not found")
+
+        updated = await repositories.update_memory(conn, memory_id, subject_id, {"consent_level": patch.consent_level.value})
+        if not updated:
+            # The row could have been deleted after the owned read above.
+            raise HTTPException(status_code=404, detail="Memory not found")
+    except asyncpg.PostgresError as error:
+        logger.exception("Failed to update consent for memory %s", memory_id)
+        raise HTTPException(status_code=503, detail="Memory consent is temporarily unavailable") from error
+
+    try:
+        await sync_memory_consent(str(updated.id), str(subject_id))
+    except Exception:
+        # The durable database consent is the source of truth. A failed vector
+        # metadata refresh must not turn a successful privacy choice into 500.
+        logger.exception("Memory %s consent saved but Pinecone sync failed", memory_id)
 
     return updated

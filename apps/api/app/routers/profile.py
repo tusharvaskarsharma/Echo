@@ -1,6 +1,7 @@
 """Authenticated profile settings and username availability endpoints."""
 
 import json
+import logging
 from typing import Annotated
 
 import asyncpg
@@ -13,6 +14,8 @@ from app.services.username_service import normalize_username, username_error
 
 
 router = APIRouter(prefix="/profile", tags=["profile"])
+privacy_router = APIRouter(prefix="/privacy", tags=["privacy"])
+logger = logging.getLogger(__name__)
 
 
 class ProfileUpdate(BaseModel):
@@ -29,6 +32,12 @@ class ProfileUpdate(BaseModel):
     # set it during onboarding; later changes require an intentional, explicit
     # confirmation from the client and are also enforced here server-side.
     confirm_username_change: bool = False
+
+
+class PrivacyUpdate(BaseModel):
+    """The durable, account-owned sharing preference stored on profiles."""
+
+    share_data: bool
 
 
 def _trim_or_none(value: str | None) -> str | None:
@@ -51,6 +60,30 @@ def _profile_response(row: asyncpg.Record) -> dict:
     return profile
 
 
+def _privacy_response(row: asyncpg.Record) -> dict[str, bool]:
+    settings = row["privacy_settings"] or {}
+    if isinstance(settings, str):
+        settings = json.loads(settings)
+    return {"share_data": bool(settings.get("share_data", False))}
+
+
+async def _upsert_privacy_settings(
+    conn: asyncpg.Connection, user: dict, settings: dict[str, bool] | None = None,
+) -> asyncpg.Record:
+    """Create a preference row for new users and safely merge later updates."""
+    incoming = settings or {"share_data": False}
+    return await conn.fetchrow(
+        """INSERT INTO public.profiles (id, email, privacy_settings)
+           VALUES ($1, $2, $3::jsonb)
+           ON CONFLICT (id) DO UPDATE SET
+             email = COALESCE(public.profiles.email, EXCLUDED.email),
+             privacy_settings = COALESCE(public.profiles.privacy_settings, '{}'::jsonb) || EXCLUDED.privacy_settings,
+             updated_at = now()
+           RETURNING privacy_settings""",
+        user["sub"], user.get("email"), json.dumps(incoming),
+    )
+
+
 @router.get("/check-username")
 async def check_username(
     username: str = Query(..., max_length=200),
@@ -67,6 +100,34 @@ async def check_username(
     if taken:
         return {"available": False, "reason": "Username already taken"}
     return {"available": True}
+
+
+@privacy_router.get("")
+async def get_privacy(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    conn: Annotated[asyncpg.Connection, Depends(get_db)],
+) -> dict[str, bool]:
+    """Return default privacy preferences even before profile onboarding runs."""
+    try:
+        return _privacy_response(await _upsert_privacy_settings(conn, current_user))
+    except asyncpg.PostgresError as error:
+        logger.exception("Failed to load privacy settings for user %s", current_user["sub"])
+        raise HTTPException(status_code=503, detail="Privacy settings are temporarily unavailable") from error
+
+
+@privacy_router.patch("")
+async def update_privacy(
+    privacy: PrivacyUpdate,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    conn: Annotated[asyncpg.Connection, Depends(get_db)],
+) -> dict[str, bool]:
+    """Upsert rather than assuming an existing consent/preferences row."""
+    try:
+        row = await _upsert_privacy_settings(conn, current_user, {"share_data": privacy.share_data})
+        return _privacy_response(row)
+    except asyncpg.PostgresError as error:
+        logger.exception("Failed to save privacy settings for user %s", current_user["sub"])
+        raise HTTPException(status_code=503, detail="Privacy settings could not be saved") from error
 
 
 @router.put("")
@@ -117,4 +178,7 @@ async def save_profile(
         if error.constraint_name in {"profiles_username_key", "profiles_username_unique_idx"}:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already taken") from error
         raise
+    except asyncpg.PostgresError as error:
+        logger.exception("Failed to save profile for user %s", current_user["sub"])
+        raise HTTPException(status_code=503, detail="Profile settings could not be saved") from error
     return _profile_response(row)

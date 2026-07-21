@@ -66,6 +66,7 @@ def health_pinecone():
 
 app.include_router(auth.router)
 app.include_router(profile.router)
+app.include_router(profile.privacy_router)
 app.include_router(groups.router)
 app.include_router(groups.shared_router)
 # Backward-compatible account deletion endpoint; the canonical endpoint is /auth/account.

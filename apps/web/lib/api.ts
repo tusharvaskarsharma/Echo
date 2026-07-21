@@ -79,6 +79,10 @@ export const api = {
     method: "PATCH", body: JSON.stringify({ share_memories }),
   }),
   sharedUsers: (): Promise<SharedUser[]> => request("/shared-users"),
+  privacy: (): Promise<{ share_data: boolean }> => request("/privacy"),
+  updatePrivacy: (share_data: boolean): Promise<{ share_data: boolean }> => request("/privacy", {
+    method: "PATCH", body: JSON.stringify({ share_data }),
+  }),
   sharedMemories: async (ownerId: string): Promise<Memory[]> => normalizeMemories(await request(`/shared-memories/${ownerId}`)),
   sharedMind: (ownerId: string): Promise<any> => request(`/shared-mind/${ownerId}`),
   

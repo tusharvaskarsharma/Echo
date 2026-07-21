@@ -5,6 +5,7 @@ The browser may select an owner to view, but it can never grant itself access.
 """
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
@@ -22,6 +23,7 @@ from app.services.username_service import normalize_username, username_error
 
 router = APIRouter(prefix="/groups", tags=["family groups"], dependencies=[Depends(get_current_user)])
 shared_router = APIRouter(tags=["family groups"], dependencies=[Depends(get_current_user)])
+logger = logging.getLogger(__name__)
 
 
 class GroupCreate(BaseModel):
@@ -252,8 +254,13 @@ async def list_groups(
     user: Annotated[dict, Depends(get_current_user)],
     conn: Annotated[asyncpg.Connection, Depends(get_db)],
 ) -> list[dict]:
-    await _expire_invitations(conn)
-    return await _groups_for_user(conn, str(user["sub"]))
+    try:
+        await _expire_invitations(conn)
+        # An authenticated account with no memberships has no error state.
+        return await _groups_for_user(conn, str(user["sub"]))
+    except asyncpg.PostgresError as error:
+        logger.exception("Failed to load family groups for user %s", user["sub"])
+        raise HTTPException(status_code=503, detail="Family Groups are temporarily unavailable") from error
 
 
 @router.get("/member-candidates")
@@ -468,23 +475,27 @@ async def list_invitations(
 ) -> list[dict]:
     """The recipient's notification inbox. Only active pending invites appear."""
     user_id = str(user["sub"])
-    await _expire_invitations(conn, invited_user_id=user_id)
-    rows = await conn.fetch(
-        """SELECT i.id, i.group_id, g.name AS group_name, i.inviter_id, i.invited_user_id,
-                      i.status, i.created_at, i.responded_at, i.expires_at,
-                      inviter.username AS inviter_username, inviter.full_name AS inviter_name,
-                      invited.username AS invited_username, invited.full_name AS invited_name,
-                      COUNT(members.id) AS member_count
-               FROM public.group_invitations i
-               JOIN public.groups g ON g.id = i.group_id
-               JOIN public.profiles inviter ON inviter.id = i.inviter_id
-               JOIN public.profiles invited ON invited.id = i.invited_user_id
-               LEFT JOIN public.group_members members ON members.group_id = i.group_id
-               WHERE i.invited_user_id = $1 AND i.status = 'pending' AND i.expires_at > now()
-               GROUP BY i.id, g.name, inviter.username, inviter.full_name, invited.username, invited.full_name
-               ORDER BY i.created_at DESC""",
-        user_id,
-    )
+    try:
+        await _expire_invitations(conn, invited_user_id=user_id)
+        rows = await conn.fetch(
+            """SELECT i.id, i.group_id, g.name AS group_name, i.inviter_id, i.invited_user_id,
+                          i.status, i.created_at, i.responded_at, i.expires_at,
+                          inviter.username AS inviter_username, inviter.full_name AS inviter_name,
+                          invited.username AS invited_username, invited.full_name AS invited_name,
+                          COUNT(members.id) AS member_count
+                   FROM public.group_invitations i
+                   JOIN public.groups g ON g.id = i.group_id
+                   JOIN public.profiles inviter ON inviter.id = i.inviter_id
+                   JOIN public.profiles invited ON invited.id = i.invited_user_id
+                   LEFT JOIN public.group_members members ON members.group_id = i.group_id
+                   WHERE i.invited_user_id = $1 AND i.status = 'pending' AND i.expires_at > now()
+                   GROUP BY i.id, g.name, inviter.username, inviter.full_name, invited.username, invited.full_name
+                   ORDER BY i.created_at DESC""",
+            user_id,
+        )
+    except asyncpg.PostgresError as error:
+        logger.exception("Failed to load invitations for user %s", user_id)
+        raise HTTPException(status_code=503, detail="Invitations are temporarily unavailable") from error
     invitations = []
     for row in rows:
         invitation = _invitation_dict(row)
@@ -559,19 +570,24 @@ async def shared_users(
     conn: Annotated[asyncpg.Connection, Depends(get_db)],
 ) -> list[dict]:
     """Return each distinct owner whose memory map the caller may access."""
-    rows = await conn.fetch(
-        """SELECT DISTINCT owner.id AS owner_id, owner.username, owner.full_name,
-                  subject.id AS subject_id
-           FROM public.memory_permissions mp
-           JOIN public.group_members gm ON gm.group_id = mp.group_id
-           JOIN public.profiles owner ON owner.id = mp.memory_owner_id
-           LEFT JOIN LATERAL (
-             SELECT id FROM public.subjects WHERE user_id = mp.memory_owner_id ORDER BY created_at ASC LIMIT 1
-           ) subject ON true
-           WHERE gm.user_id = $1 AND mp.memory_owner_id <> $1
-           ORDER BY lower(COALESCE(owner.full_name, owner.username))""",
-        str(user["sub"]),
-    )
+    try:
+        rows = await conn.fetch(
+            """SELECT DISTINCT owner.id AS owner_id, owner.username, owner.full_name,
+                      subject.id AS subject_id
+               FROM public.memory_permissions mp
+               JOIN public.group_members gm ON gm.group_id = mp.group_id
+               JOIN public.profiles owner ON owner.id = mp.memory_owner_id
+               LEFT JOIN LATERAL (
+                 SELECT id FROM public.subjects WHERE user_id = mp.memory_owner_id ORDER BY created_at ASC LIMIT 1
+               ) subject ON true
+               WHERE gm.user_id = $1 AND mp.memory_owner_id <> $1
+               -- DISTINCT may only sort by selected expressions in PostgreSQL.
+               ORDER BY owner.full_name NULLS LAST, owner.username NULLS LAST""",
+            str(user["sub"]),
+        )
+    except asyncpg.PostgresError as error:
+        logger.exception("Failed to load shared users for user %s", user["sub"])
+        raise HTTPException(status_code=503, detail="Shared users are temporarily unavailable") from error
     return [{
         "owner_id": str(row["owner_id"]), "subject_id": str(row["subject_id"]) if row["subject_id"] else None,
         "username": row["username"], "display_name": row["full_name"] or row["username"] or "Shared Echo",
