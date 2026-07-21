@@ -34,12 +34,30 @@ class DatabaseClient:
                 await conn.execute("SELECT 1")
                 logger.info("Database connection test passed.")
                 await self.run_migrations(conn)
+                await self.validate_identity_schema(conn)
         except Exception as e:
             logger.error(f"Failed to connect to the database: {e}")
             if not settings.development_mode:
                 raise
             logger.warning("DEVELOPMENT_MODE=true — continuing without database. DB-dependent routes will fail at request time.")
             self.pool = None
+
+    async def validate_identity_schema(self, conn: asyncpg.Connection) -> None:
+        """Make Life Profile schema drift visible at startup before a request hits it."""
+        table_exists = await conn.fetchval("SELECT to_regclass('public.identity_profiles') IS NOT NULL")
+        if not table_exists:
+            logger.error("✗ identity_profiles missing")
+            return
+        expected = {"id", "user_id", "full_name", "preferred_name", "occupation"}
+        rows = await conn.fetch(
+            """SELECT column_name FROM information_schema.columns
+               WHERE table_schema = 'public' AND table_name = 'identity_profiles'"""
+        )
+        missing_columns = expected - {str(row["column_name"]) for row in rows}
+        if missing_columns:
+            logger.error("✗ identity_profiles missing columns: %s", ", ".join(sorted(missing_columns)))
+            return
+        logger.info("✓ identity_profiles exists")
 
     async def run_migrations(self, conn: asyncpg.Connection):
         import os

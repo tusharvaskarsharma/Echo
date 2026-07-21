@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth.dependencies import get_current_user
 from app.db.client import get_db
-from app.models.identity import IdentityProfileResponse, IdentityProfileUpdate
+from app.models.identity import IdentityProfileReadResponse, IdentityProfileResponse, IdentityProfileUpdate
 from app.services.identity_service import IdentityService
 
 
@@ -28,18 +28,21 @@ async def _can_access_identity(conn: asyncpg.Connection, caller_id: str, owner_i
     ))
 
 
-@router.get("", response_model=IdentityProfileResponse)
+@router.get("", response_model=IdentityProfileReadResponse)
 async def get_my_identity(
     user: Annotated[dict, Depends(get_current_user)],
     conn: Annotated[asyncpg.Connection, Depends(get_db)],
 ) -> dict:
     try:
-        return await IdentityService().ensure_owner_profile(conn, str(user["sub"]), user.get("email"))
+        profile, exists = await IdentityService().get_or_create_owner_profile(
+            conn, str(user["sub"]), user.get("email"),
+        )
+        return {"profile": profile, "exists": exists}
     except asyncpg.PostgresError as error:
-        logger.exception("Failed to load Life Profile for authenticated user")
+        logger.exception("GET /identity failed")
         raise HTTPException(status_code=503, detail="Life Profile is temporarily unavailable") from error
     except Exception as error:
-        logger.exception("Unexpected Life Profile load failure for authenticated user")
+        logger.exception("GET /identity failed")
         raise HTTPException(status_code=500, detail="Life Profile could not be loaded") from error
 
 

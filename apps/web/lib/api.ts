@@ -90,7 +90,10 @@ export const api = {
   updatePrivacy: (share_data: boolean): Promise<{ share_data: boolean }> => request("/privacy", {
     method: "PATCH", body: JSON.stringify({ share_data }),
   }),
-  identity: (): Promise<IdentityProfile> => request("/identity"),
+  identity: async (): Promise<IdentityProfile> => {
+    const response = await request("/identity") as IdentityProfile | { profile: IdentityProfile; exists: boolean };
+    return "profile" in response ? response.profile : response;
+  },
   updateIdentity: (profile: Partial<IdentityProfile>): Promise<IdentityProfile> => request("/identity", {
     method: "PUT", body: JSON.stringify(profile),
   }),

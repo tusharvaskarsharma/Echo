@@ -208,18 +208,34 @@ def answer_identity_question(question: str, profile: dict[str, Any]) -> str | No
 
 
 class IdentityService:
-    async def ensure_owner_profile(self, conn: asyncpg.Connection, user_id: str, email: str | None = None) -> dict[str, Any]:
-        """Create a sparse owner row without depending on an optional profile row."""
+    async def get_or_create_owner_profile(
+        self, conn: asyncpg.Connection, user_id: str, email: str | None = None,
+    ) -> tuple[dict[str, Any], bool]:
+        """Return an owner's profile, creating a default row when none exists.
+
+        ``fetchrow`` is intentionally used as the equivalent of a
+        ``maybe_single`` query: no row is a normal new-account state, not an
+        exception.  The insert is an UPSERT so a concurrent first request is
+        also safe.
+        """
+        row = await conn.fetchrow("SELECT * FROM public.identity_profiles WHERE user_id = $1", user_id)
+        if row:
+            return _row_to_profile(row, fallback_user_id=user_id), True
+
         row = await conn.fetchrow(
             """INSERT INTO public.identity_profiles (user_id, email)
                VALUES ($1, $2)
-               ON CONFLICT (user_id) DO NOTHING
+               ON CONFLICT (user_id) DO UPDATE SET
+                 email = COALESCE(public.identity_profiles.email, EXCLUDED.email)
                RETURNING *""",
             user_id, email,
         )
-        if not row:
-            row = await conn.fetchrow("SELECT * FROM public.identity_profiles WHERE user_id = $1", user_id)
-        return _row_to_profile(row, fallback_user_id=user_id)
+        return _row_to_profile(row, fallback_user_id=user_id), False
+
+    async def ensure_owner_profile(self, conn: asyncpg.Connection, user_id: str, email: str | None = None) -> dict[str, Any]:
+        """Create a sparse owner row without depending on an optional profile row."""
+        profile, _ = await self.get_or_create_owner_profile(conn, user_id, email)
+        return profile
 
     async def load_for_access(
         self, conn: asyncpg.Connection, owner_id: str, *, is_owner: bool, fallback_name: str | None = None,

@@ -6,6 +6,7 @@ from datetime import date
 from app.services.identity_service import (
     IdentityIntent, IdentityService, answer_identity_question, build_identity_context, classify_question, filter_shared_identity,
 )
+from app.routers.identity import get_my_identity
 
 
 def _profile():
@@ -48,6 +49,8 @@ class _IdentityConnection:
 
     async def fetchrow(self, query: str, *_args):
         self.queries.append(query)
+        if query.lstrip().startswith("SELECT"):
+            return None
         if query.lstrip().startswith("INSERT"):
             return {
                 "user_id": "owner-1",
@@ -73,3 +76,20 @@ def test_new_life_profile_does_not_depend_on_the_legacy_profiles_table():
     assert profile["user_id"] == "owner-1"
     assert profile["email"] == "owner@example.test"
     assert all("public.profiles" not in query for query in connection.queries)
+
+
+def test_missing_life_profile_creates_a_default_profile_instead_of_failing():
+    connection = _IdentityConnection()
+    profile, existed = asyncio.run(IdentityService().get_or_create_owner_profile(connection, "owner-1", "owner@example.test"))
+
+    assert existed is False
+    assert profile["user_id"] == "owner-1"
+    assert profile["languages"] == []
+    assert "ON CONFLICT (user_id) DO UPDATE" in connection.queries[-1]
+
+
+def test_get_identity_returns_200_shape_for_a_brand_new_user():
+    response = asyncio.run(get_my_identity({"sub": "owner-1", "email": "owner@example.test"}, _IdentityConnection()))
+
+    assert response["exists"] is False
+    assert response["profile"]["user_id"] == "owner-1"

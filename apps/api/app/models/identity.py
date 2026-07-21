@@ -101,6 +101,7 @@ class IdentityProfileResponse(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
+    id: str | None = None
     user_id: str
     full_name: str | None = None
     preferred_name: str | None = None
@@ -137,3 +138,10 @@ class IdentityProfileResponse(BaseModel):
     privacy_settings: IdentityPrivacySettings = Field(default_factory=IdentityPrivacySettings)
     created_at: Any | None = None
     updated_at: Any | None = None
+
+
+class IdentityProfileReadResponse(BaseModel):
+    """GET /identity response, including whether a profile existed before this read."""
+
+    profile: IdentityProfileResponse
+    exists: bool
