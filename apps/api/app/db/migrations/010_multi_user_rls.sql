@@ -39,8 +39,9 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1
-        FROM information_schema.table_constraints
-        WHERE constraint_name = 'legacy_contacts_user_id_fkey'
+        FROM pg_constraint
+        WHERE conrelid = 'public.legacy_contacts'::regclass
+          AND conname = 'legacy_contacts_user_id_fkey'
     ) THEN
         ALTER TABLE legacy_contacts ADD CONSTRAINT legacy_contacts_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
     END IF;
@@ -51,8 +52,9 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1
-        FROM information_schema.table_constraints
-        WHERE constraint_name = 'conversation_history_user_id_fkey'
+        FROM pg_constraint
+        WHERE conrelid = 'public.conversation_history'::regclass
+          AND conname = 'conversation_history_user_id_fkey'
     ) THEN
         ALTER TABLE conversation_history ADD CONSTRAINT conversation_history_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
     END IF;

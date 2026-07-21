@@ -102,3 +102,7 @@ def test_invitation_migration_requires_acceptance_and_expiration_controls() -> N
     assert "expires_at TIMESTAMPTZ" in migration
     assert "recipient_can_respond_to_pending_invitation" in migration
     assert "invitation_acceptance_creates_membership" in migration
+    assert (
+        "DROP POLICY IF EXISTS invitation_acceptance_creates_membership ON public.group_members;"
+        in migration
+    )

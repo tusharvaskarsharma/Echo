@@ -90,6 +90,7 @@ CREATE POLICY group_owner_can_send_invitation ON public.group_invitations
 
 -- The owner may only create their own initial owner membership. A recipient
 -- can become a member only after their invitation row is marked accepted.
+DROP POLICY IF EXISTS invitation_acceptance_creates_membership ON public.group_members;
 DROP POLICY IF EXISTS owners_can_add_members ON public.group_members;
 CREATE POLICY invitation_acceptance_creates_membership ON public.group_members
   FOR INSERT TO authenticated WITH CHECK (
