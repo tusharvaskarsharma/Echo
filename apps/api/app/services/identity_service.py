@@ -7,6 +7,7 @@ import re
 from datetime import date
 from enum import StrEnum
 from typing import Any
+from uuid import UUID
 
 import asyncpg
 
@@ -54,6 +55,15 @@ def classify_question(question: str) -> IdentityIntent:
 def _row_to_profile(row: asyncpg.Record | dict[str, Any] | None, *, fallback_user_id: str, fallback_name: str | None = None) -> dict[str, Any]:
     profile: dict[str, Any] = dict(row) if row else {"user_id": fallback_user_id}
     profile.setdefault("user_id", fallback_user_id)
+
+    # asyncpg exposes UUID columns as ``uuid.UUID`` instances.  The HTTP
+    # contract deliberately exposes identifiers as strings, so leaving these
+    # values untouched makes FastAPI's response-model validation fail *after*
+    # the database read has succeeded, resulting in a misleading HTTP 500.
+    for identifier in ("id", "user_id"):
+        if isinstance(profile.get(identifier), UUID):
+            profile[identifier] = str(profile[identifier])
+
     if not profile.get("full_name") and fallback_name and fallback_name != "Your legacy":
         profile["full_name"] = fallback_name
     for field in JSON_FIELDS:

@@ -2,9 +2,17 @@
 
 import asyncio
 from datetime import date
+from uuid import uuid4
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.auth.dependencies import get_current_user
+from app.db.client import get_db
+from app.models.identity import IdentityProfileReadResponse
+from app.routers.identity import router as identity_router
 from app.services.identity_service import (
-    IdentityIntent, IdentityService, answer_identity_question, build_identity_context, classify_question, filter_shared_identity,
+    IdentityIntent, IdentityService, _row_to_profile, answer_identity_question, build_identity_context, classify_question, filter_shared_identity,
 )
 from app.routers.identity import get_my_identity
 
@@ -93,3 +101,71 @@ def test_get_identity_returns_200_shape_for_a_brand_new_user():
 
     assert response["exists"] is False
     assert response["profile"]["user_id"] == "owner-1"
+
+
+def test_identity_response_normalizes_asyncpg_uuid_values() -> None:
+    """Database UUIDs must not fail FastAPI's string-based response model."""
+    profile_id, user_id = uuid4(), uuid4()
+    profile = _row_to_profile(
+        {
+            "id": profile_id,
+            "user_id": user_id,
+            "languages": [],
+            "children": [],
+            "parents": [],
+            "siblings": [],
+            "grandchildren": [],
+            "pets": [],
+            "values": [],
+            "social_links": {},
+            "privacy_settings": {"shared_fields": []},
+        },
+        fallback_user_id=str(user_id),
+    )
+
+    assert profile["id"] == str(profile_id)
+    assert profile["user_id"] == str(user_id)
+    parsed = IdentityProfileReadResponse.model_validate({"profile": profile, "exists": True})
+    assert parsed.profile.id == str(profile_id)
+    assert parsed.profile.user_id == str(user_id)
+
+
+def test_get_identity_endpoint_serializes_database_uuids() -> None:
+    """Regression test for the response-validation 500 seen in production."""
+    profile_id, user_id = uuid4(), uuid4()
+
+    class UUIDConnection(_IdentityConnection):
+        async def fetchrow(self, query: str, *_args):
+            if query.lstrip().startswith("SELECT"):
+                return None
+            if query.lstrip().startswith("INSERT"):
+                return {
+                    "id": profile_id,
+                    "user_id": user_id,
+                    "languages": [],
+                    "children": [],
+                    "parents": [],
+                    "siblings": [],
+                    "grandchildren": [],
+                    "pets": [],
+                    "values": [],
+                    "social_links": {},
+                    "privacy_settings": {"shared_fields": []},
+                }
+            raise AssertionError(f"Unexpected query: {query}")
+
+    app = FastAPI()
+    app.include_router(identity_router)
+
+    async def override_database():
+        yield UUIDConnection()
+
+    app.dependency_overrides[get_current_user] = lambda: {"sub": str(user_id), "email": "owner@example.test"}
+    app.dependency_overrides[get_db] = override_database
+
+    with TestClient(app) as client:
+        response = client.get("/identity")
+
+    assert response.status_code == 200
+    assert response.json()["profile"]["id"] == str(profile_id)
+    assert response.json()["profile"]["user_id"] == str(user_id)
