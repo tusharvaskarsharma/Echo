@@ -68,4 +68,4 @@ def test_family_group_migration_defines_foreign_keys_indexes_and_rls() -> None:
     assert "UNIQUE (group_id, user_id)" in migration
     assert "idx_group_members_user_id" in migration
     assert "group_members_can_read_shared_memories" in migration
-    assert "current_user_is_group_member" in migration
+    assert "private.current_user_is_group_member" in migration

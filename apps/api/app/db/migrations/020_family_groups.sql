@@ -94,12 +94,18 @@ ALTER TABLE public.memory_permissions ENABLE ROW LEVEL SECURITY;
 -- A policy that reads its own RLS-protected table recurses in PostgreSQL.
 -- This narrow helper reads only the caller's own membership and is used solely
 -- by the policies below.
-CREATE OR REPLACE FUNCTION public.current_user_is_group_member(target_group_id UUID)
+CREATE SCHEMA IF NOT EXISTS private;
+REVOKE ALL ON SCHEMA private FROM PUBLIC;
+GRANT USAGE ON SCHEMA private TO authenticated;
+-- Earlier development deployments used this helper in public. The private
+-- version below replaces it, so remove the exposed duplicate if present.
+DROP FUNCTION IF EXISTS public.current_user_is_group_member(UUID);
+CREATE OR REPLACE FUNCTION private.current_user_is_group_member(target_group_id UUID)
 RETURNS BOOLEAN
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = public
+SET search_path = ''
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.group_members
@@ -116,7 +122,7 @@ GRANT SELECT ON public.memories TO authenticated;
 DROP POLICY IF EXISTS group_members_can_view_groups ON public.groups;
 CREATE POLICY group_members_can_view_groups ON public.groups
   FOR SELECT TO authenticated
-  USING (owner_id = (select auth.uid()) OR public.current_user_is_group_member(id));
+  USING (owner_id = (select auth.uid()) OR (select private.current_user_is_group_member(id)));
 DROP POLICY IF EXISTS users_can_create_owned_groups ON public.groups;
 CREATE POLICY users_can_create_owned_groups ON public.groups
   FOR INSERT TO authenticated WITH CHECK (owner_id = (select auth.uid()));
@@ -129,7 +135,7 @@ CREATE POLICY owners_can_delete_groups ON public.groups
 
 DROP POLICY IF EXISTS group_members_can_view_members ON public.group_members;
 CREATE POLICY group_members_can_view_members ON public.group_members
-  FOR SELECT TO authenticated USING (public.current_user_is_group_member(group_id));
+  FOR SELECT TO authenticated USING ((select private.current_user_is_group_member(group_id)));
 DROP POLICY IF EXISTS owners_can_add_members ON public.group_members;
 CREATE POLICY owners_can_add_members ON public.group_members
   FOR INSERT TO authenticated WITH CHECK (
@@ -148,7 +154,7 @@ CREATE POLICY owners_or_members_can_remove_members ON public.group_members
 DROP POLICY IF EXISTS group_members_can_view_memory_permissions ON public.memory_permissions;
 CREATE POLICY group_members_can_view_memory_permissions ON public.memory_permissions
   FOR SELECT TO authenticated USING (
-    memory_owner_id = (select auth.uid()) OR public.current_user_is_group_member(group_id)
+    memory_owner_id = (select auth.uid()) OR (select private.current_user_is_group_member(group_id))
   );
 DROP POLICY IF EXISTS owners_can_manage_memory_permissions ON public.memory_permissions;
 CREATE POLICY owners_can_manage_memory_permissions ON public.memory_permissions
@@ -164,11 +170,11 @@ CREATE POLICY group_members_can_read_shared_memories ON public.memories
     user_id = (select auth.uid()) OR EXISTS (
       SELECT 1
       FROM public.memory_permissions mp
-      WHERE mp.memory_owner_id = memories.user_id AND public.current_user_is_group_member(mp.group_id)
+      WHERE mp.memory_owner_id = memories.user_id AND (select private.current_user_is_group_member(mp.group_id))
     )
   );
 
 REVOKE EXECUTE ON FUNCTION public.enforce_group_member_role() FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.enforce_memory_permission_owner() FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.current_user_is_group_member(UUID) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.current_user_is_group_member(UUID) TO authenticated;
+REVOKE EXECUTE ON FUNCTION private.current_user_is_group_member(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION private.current_user_is_group_member(UUID) TO authenticated;
