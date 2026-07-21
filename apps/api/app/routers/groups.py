@@ -5,6 +5,7 @@ The browser may select an owner to view, but it can never grant itself access.
 """
 
 import json
+from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
@@ -33,7 +34,7 @@ class GroupUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=1000)
 
 
-class MemberCreate(BaseModel):
+class InvitationCreate(BaseModel):
     username: str = Field(min_length=1, max_length=200)
 
 
@@ -71,7 +72,51 @@ def _group_dict(row: asyncpg.Record) -> dict:
         "share_memories": bool(row["share_memories"]),
         "created_at": row["created_at"].isoformat(),
         "members": [],
+        "invitations": [],
     }
+
+
+def _invitation_dict(row: asyncpg.Record) -> dict:
+    return {
+        "id": str(row["id"]),
+        "group_id": str(row["group_id"]),
+        "group_name": row.get("group_name") if hasattr(row, "get") else row["group_name"],
+        "inviter_id": str(row["inviter_id"]),
+        "inviter_name": row["inviter_name"] or row["inviter_username"] or "A family member",
+        "inviter_username": row["inviter_username"],
+        "invited_user_id": str(row["invited_user_id"]),
+        "invited_username": row["invited_username"],
+        "invited_name": row["invited_name"] or row["invited_username"] or "Member",
+        "status": str(row["status"]),
+        "created_at": row["created_at"].isoformat(),
+        "responded_at": row["responded_at"].isoformat() if row["responded_at"] else None,
+        "expires_at": row["expires_at"].isoformat(),
+    }
+
+
+async def _expire_invitations(
+    conn: asyncpg.Connection, group_id: UUID | None = None, invited_user_id: UUID | str | None = None,
+) -> None:
+    """Make expiry visible before any listing, resend, or response decision."""
+    clauses = ["status = 'pending'", "expires_at <= now()"]
+    values: list[UUID | str] = []
+    if group_id is not None:
+        values.append(group_id)
+        clauses.append(f"group_id = ${len(values)}")
+    if invited_user_id is not None:
+        values.append(str(invited_user_id))
+        clauses.append(f"invited_user_id = ${len(values)}")
+    await conn.execute(
+        f"UPDATE public.group_invitations SET status = 'expired' WHERE {' AND '.join(clauses)}",
+        *values,
+    )
+
+
+def _require_pending_invitation(row: asyncpg.Record) -> None:
+    if str(row["status"]) != "pending":
+        raise HTTPException(status_code=409, detail=f"Invitation is already {row['status']}")
+    if row["expires_at"] <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail="Invitation has expired")
 
 
 async def _ensure_has_username(conn: asyncpg.Connection, user_id: str) -> None:
@@ -138,6 +183,22 @@ async def _groups_for_user(conn: asyncpg.Connection, user_id: str) -> list[dict]
             "joined_at": member["joined_at"].isoformat(),
             "is_current_user": str(member["user_id"]) == user_id,
         })
+    owner_group_ids = [UUID(group["id"]) for group in groups if group["owner_id"] == user_id]
+    if owner_group_ids:
+        invitation_rows = await conn.fetch(
+            """SELECT i.id, i.group_id, i.inviter_id, i.invited_user_id, i.status, i.created_at,
+                      i.responded_at, i.expires_at, invited.username AS invited_username,
+                      invited.full_name AS invited_name, inviter.username AS inviter_username,
+                      inviter.full_name AS inviter_name
+               FROM public.group_invitations i
+               JOIN public.profiles invited ON invited.id = i.invited_user_id
+               JOIN public.profiles inviter ON inviter.id = i.inviter_id
+               WHERE i.group_id = ANY($1::uuid[])
+               ORDER BY i.created_at DESC""",
+            owner_group_ids,
+        )
+        for invitation in invitation_rows:
+            by_id[str(invitation["group_id"])]["invitations"].append(_invitation_dict(invitation))
     return groups
 
 
@@ -191,6 +252,7 @@ async def list_groups(
     user: Annotated[dict, Depends(get_current_user)],
     conn: Annotated[asyncpg.Connection, Depends(get_db)],
 ) -> list[dict]:
+    await _expire_invitations(conn)
     return await _groups_for_user(conn, str(user["sub"]))
 
 
@@ -255,41 +317,101 @@ async def delete_group(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/{group_id}/members", status_code=status.HTTP_201_CREATED)
-async def add_group_member(
+@router.post("/{group_id}/invite", status_code=status.HTTP_201_CREATED)
+async def invite_group_member(
     group_id: UUID,
-    payload: MemberCreate,
+    payload: InvitationCreate,
     user: Annotated[dict, Depends(get_current_user)],
     conn: Annotated[asyncpg.Connection, Depends(get_db)],
 ) -> dict:
+    """Create a seven-day invitation without granting any membership or access."""
     caller_id = str(user["sub"])
     await _require_group_owner(conn, group_id, caller_id)
     username = _validated_username(payload.username)
-    member = await conn.fetchrow(
+    invited_user = await conn.fetchrow(
         "SELECT id, username, full_name FROM public.profiles WHERE username = $1", username
     )
-    if not member:
+    if not invited_user:
         raise HTTPException(status_code=404, detail="No account has that username")
-    if str(member["id"]) == caller_id:
-        raise HTTPException(status_code=422, detail="You are already the owner of this group")
+    if str(invited_user["id"]) == caller_id:
+        raise HTTPException(status_code=422, detail="You cannot invite yourself")
+    if await conn.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM public.group_members WHERE group_id = $1 AND user_id = $2)",
+        group_id, invited_user["id"],
+    ):
+        raise HTTPException(status_code=409, detail="That user is already a member")
+    await _expire_invitations(conn, group_id, invited_user["id"])
     try:
         row = await conn.fetchrow(
-            """INSERT INTO public.group_members (group_id, user_id, role)
-               VALUES ($1, $2, 'member')
-               ON CONFLICT (group_id, user_id) DO NOTHING
-               RETURNING user_id, role, joined_at""",
-            group_id, member["id"],
+            """INSERT INTO public.group_invitations (group_id, inviter_id, invited_user_id)
+               VALUES ($1, $2, $3)
+               RETURNING id, group_id, inviter_id, invited_user_id, status, created_at, responded_at, expires_at""",
+            group_id, caller_id, invited_user["id"],
         )
-    except asyncpg.ForeignKeyViolationError as error:
-        raise HTTPException(status_code=404, detail="Group not found") from error
-    if not row:
-        raise HTTPException(status_code=409, detail="That user is already a member")
+    except asyncpg.UniqueViolationError as error:
+        raise HTTPException(status_code=409, detail="That user already has a pending invitation") from error
     return {
-        "user_id": str(row["user_id"]), "username": member["username"],
-        "display_name": member["full_name"] or member["username"], "role": row["role"],
-        "joined_at": row["joined_at"].isoformat(),
-        "message": "Member added to the group",
+        **_invitation_dict({
+            **dict(row), "group_name": None, "inviter_name": user.get("email"), "inviter_username": None,
+            "invited_name": invited_user["full_name"], "invited_username": invited_user["username"],
+        }),
+        "message": "Invitation sent. They must accept before joining.",
     }
+
+
+@router.post("/{group_id}/members", status_code=status.HTTP_410_GONE)
+async def direct_member_addition_is_disabled(
+    group_id: UUID,
+    payload: InvitationCreate,
+    user: Annotated[dict, Depends(get_current_user)],
+) -> None:
+    """Prevent legacy clients from bypassing the acceptance step."""
+    raise HTTPException(status_code=410, detail="Direct member addition is disabled; send an invitation instead")
+
+
+@router.get("/{group_id}/pending")
+async def group_invitations(
+    group_id: UUID,
+    user: Annotated[dict, Depends(get_current_user)],
+    conn: Annotated[asyncpg.Connection, Depends(get_db)],
+) -> list[dict]:
+    """Owner-only invitation history, including pending and response badges."""
+    await _require_group_owner(conn, group_id, str(user["sub"]))
+    await _expire_invitations(conn, group_id)
+    rows = await conn.fetch(
+        """SELECT i.id, i.group_id, g.name AS group_name, i.inviter_id, i.invited_user_id,
+                      i.status, i.created_at, i.responded_at, i.expires_at,
+                      invited.username AS invited_username, invited.full_name AS invited_name,
+                      inviter.username AS inviter_username, inviter.full_name AS inviter_name
+               FROM public.group_invitations i
+               JOIN public.groups g ON g.id = i.group_id
+               JOIN public.profiles invited ON invited.id = i.invited_user_id
+               JOIN public.profiles inviter ON inviter.id = i.inviter_id
+               WHERE i.group_id = $1
+               ORDER BY i.created_at DESC""",
+        group_id,
+    )
+    return [_invitation_dict(row) for row in rows]
+
+
+@router.delete("/invitations/{invitation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def cancel_group_invitation(
+    invitation_id: UUID,
+    user: Annotated[dict, Depends(get_current_user)],
+    conn: Annotated[asyncpg.Connection, Depends(get_db)],
+) -> Response:
+    """Only a group owner may cancel an unanswered invitation."""
+    await _expire_invitations(conn)
+    deleted = await conn.fetchval(
+        """DELETE FROM public.group_invitations i
+           USING public.groups g
+           WHERE i.id = $1 AND i.group_id = g.id AND g.owner_id = $2 AND i.status = 'pending'
+           RETURNING i.id""",
+        invitation_id, str(user["sub"]),
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Pending invitation not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete("/{group_id}/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -337,6 +459,98 @@ async def update_group_sharing(
             caller_id, group_id,
         )
     return {"group_id": str(group_id), "share_memories": payload.share_memories}
+
+
+@shared_router.get("/invitations")
+async def list_invitations(
+    user: Annotated[dict, Depends(get_current_user)],
+    conn: Annotated[asyncpg.Connection, Depends(get_db)],
+) -> list[dict]:
+    """The recipient's notification inbox. Only active pending invites appear."""
+    user_id = str(user["sub"])
+    await _expire_invitations(conn, invited_user_id=user_id)
+    rows = await conn.fetch(
+        """SELECT i.id, i.group_id, g.name AS group_name, i.inviter_id, i.invited_user_id,
+                      i.status, i.created_at, i.responded_at, i.expires_at,
+                      inviter.username AS inviter_username, inviter.full_name AS inviter_name,
+                      invited.username AS invited_username, invited.full_name AS invited_name,
+                      COUNT(members.id) AS member_count
+               FROM public.group_invitations i
+               JOIN public.groups g ON g.id = i.group_id
+               JOIN public.profiles inviter ON inviter.id = i.inviter_id
+               JOIN public.profiles invited ON invited.id = i.invited_user_id
+               LEFT JOIN public.group_members members ON members.group_id = i.group_id
+               WHERE i.invited_user_id = $1 AND i.status = 'pending' AND i.expires_at > now()
+               GROUP BY i.id, g.name, inviter.username, inviter.full_name, invited.username, invited.full_name
+               ORDER BY i.created_at DESC""",
+        user_id,
+    )
+    invitations = []
+    for row in rows:
+        invitation = _invitation_dict(row)
+        invitation["member_count"] = int(row["member_count"])
+        invitations.append(invitation)
+    return invitations
+
+
+async def _respond_to_invitation(
+    conn: asyncpg.Connection, invitation_id: UUID, recipient_id: str, response: str,
+) -> dict:
+    """Atomically accept/decline an invitation owned by the signed-in recipient."""
+    await _expire_invitations(conn, invited_user_id=recipient_id)
+    async with conn.transaction():
+        invitation = await conn.fetchrow(
+            """SELECT i.id, i.group_id, g.name AS group_name, i.inviter_id, i.invited_user_id,
+                      i.status, i.created_at, i.responded_at, i.expires_at,
+                      inviter.username AS inviter_username, inviter.full_name AS inviter_name,
+                      invited.username AS invited_username, invited.full_name AS invited_name
+               FROM public.group_invitations i
+               JOIN public.groups g ON g.id = i.group_id
+               JOIN public.profiles inviter ON inviter.id = i.inviter_id
+               JOIN public.profiles invited ON invited.id = i.invited_user_id
+               WHERE i.id = $1 AND i.invited_user_id = $2
+               FOR UPDATE""",
+            invitation_id, recipient_id,
+        )
+        if not invitation:
+            raise HTTPException(status_code=404, detail="Invitation not found")
+        _require_pending_invitation(invitation)
+        updated = await conn.fetchrow(
+            """UPDATE public.group_invitations
+               SET status = $1
+               WHERE id = $2 AND invited_user_id = $3 AND status = 'pending'
+               RETURNING id, group_id, inviter_id, invited_user_id, status, created_at, responded_at, expires_at""",
+            response, invitation_id, recipient_id,
+        )
+        if not updated:
+            raise HTTPException(status_code=409, detail="Invitation has already been answered")
+        if response == "accepted":
+            await conn.execute(
+                """INSERT INTO public.group_members (group_id, user_id, role)
+                   VALUES ($1, $2, 'member') ON CONFLICT (group_id, user_id) DO NOTHING""",
+                invitation["group_id"], recipient_id,
+            )
+        result = _invitation_dict({**dict(invitation), **dict(updated)})
+        result["message"] = "Invitation accepted. You can now access this Echo." if response == "accepted" else "Invitation declined."
+        return result
+
+
+@shared_router.post("/invitations/{invitation_id}/accept")
+async def accept_invitation(
+    invitation_id: UUID,
+    user: Annotated[dict, Depends(get_current_user)],
+    conn: Annotated[asyncpg.Connection, Depends(get_db)],
+) -> dict:
+    return await _respond_to_invitation(conn, invitation_id, str(user["sub"]), "accepted")
+
+
+@shared_router.post("/invitations/{invitation_id}/decline")
+async def decline_invitation(
+    invitation_id: UUID,
+    user: Annotated[dict, Depends(get_current_user)],
+    conn: Annotated[asyncpg.Connection, Depends(get_db)],
+) -> dict:
+    return await _respond_to_invitation(conn, invitation_id, str(user["sub"]), "declined")
 
 
 @shared_router.get("/shared-users")

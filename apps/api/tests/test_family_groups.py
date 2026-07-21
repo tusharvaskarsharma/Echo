@@ -1,13 +1,20 @@
 """Focused authorization checks for private Family Group sharing."""
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
 
 from app.routers.echo_conversation import _resolve_access
-from app.routers.groups import _can_access_owner, _require_group_owner
+from app.routers.groups import (
+    InvitationCreate,
+    _can_access_owner,
+    _require_group_owner,
+    _require_pending_invitation,
+    direct_member_addition_is_disabled,
+)
 
 
 class GroupAccessConnection:
@@ -21,6 +28,22 @@ class GroupAccessConnection:
 def test_shared_memories_require_a_database_membership_grant() -> None:
     assert asyncio.run(_can_access_owner(GroupAccessConnection(True), "member", "owner"))
     assert not asyncio.run(_can_access_owner(GroupAccessConnection(False), "member", "owner"))
+
+
+def test_invitation_state_must_be_pending_and_unexpired_before_acceptance() -> None:
+    _require_pending_invitation({"status": "pending", "expires_at": datetime.now(timezone.utc) + timedelta(days=1)})
+    with pytest.raises(HTTPException) as declined:
+        _require_pending_invitation({"status": "declined", "expires_at": datetime.now(timezone.utc) + timedelta(days=1)})
+    assert declined.value.status_code == 409
+    with pytest.raises(HTTPException) as expired:
+        _require_pending_invitation({"status": "pending", "expires_at": datetime.now(timezone.utc) - timedelta(seconds=1)})
+    assert expired.value.status_code == 410
+
+
+def test_legacy_member_endpoint_cannot_bypass_invitation_acceptance() -> None:
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(direct_member_addition_is_disabled("group", InvitationCreate(username="member"), {"sub": "owner"}))
+    assert error.value.status_code == 410
 
 
 class OwnershipConnection:
@@ -69,3 +92,13 @@ def test_family_group_migration_defines_foreign_keys_indexes_and_rls() -> None:
     assert "idx_group_members_user_id" in migration
     assert "group_members_can_read_shared_memories" in migration
     assert "private.current_user_is_group_member" in migration
+
+
+def test_invitation_migration_requires_acceptance_and_expiration_controls() -> None:
+    migration = Path("app/db/migrations/021_group_invitations.sql").read_text(encoding="utf-8")
+    assert "CREATE TABLE IF NOT EXISTS public.group_invitations" in migration
+    assert "('pending', 'accepted', 'declined', 'expired')" in migration
+    assert "group_invitations_one_pending_per_user" in migration
+    assert "expires_at TIMESTAMPTZ" in migration
+    assert "recipient_can_respond_to_pending_invitation" in migration
+    assert "invitation_acceptance_creates_membership" in migration

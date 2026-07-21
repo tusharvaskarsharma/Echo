@@ -54,6 +54,27 @@ export type FamilyGroup = {
   share_memories: boolean;
   created_at: string;
   members: GroupMember[];
+  invitations: GroupInvitation[];
+};
+
+export type InvitationStatus = "pending" | "accepted" | "declined" | "expired";
+
+export type GroupInvitation = {
+  id: string;
+  group_id: string;
+  group_name: string | null;
+  inviter_id: string;
+  inviter_name: string;
+  inviter_username: string | null;
+  invited_user_id: string;
+  invited_username: string | null;
+  invited_name: string;
+  status: InvitationStatus;
+  created_at: string;
+  responded_at: string | null;
+  expires_at: string;
+  member_count?: number;
+  message?: string;
 };
 
 export type SharedUser = {

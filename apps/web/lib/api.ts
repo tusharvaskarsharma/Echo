@@ -1,4 +1,4 @@
-import type { ConsentLevel, FamilyGroup, GroupMember, Memory, Profile, SharedUser } from "./types";
+import type { ConsentLevel, FamilyGroup, GroupInvitation, GroupMember, Memory, Profile, SharedUser } from "./types";
 import { createClient } from "./supabase/client";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -66,9 +66,14 @@ export const api = {
   }),
   deleteGroup: (groupId: string): Promise<null> => request(`/groups/${groupId}`, { method: "DELETE" }),
   findGroupMember: (username: string): Promise<Pick<GroupMember, "user_id" | "username" | "display_name">> => request(`/groups/member-candidates?username=${encodeURIComponent(username)}`),
-  addGroupMember: (groupId: string, username: string): Promise<GroupMember> => request(`/groups/${groupId}/members`, {
+  inviteGroupMember: (groupId: string, username: string): Promise<GroupInvitation> => request(`/groups/${groupId}/invite`, {
     method: "POST", body: JSON.stringify({ username }),
   }),
+  groupInvitations: (groupId: string): Promise<GroupInvitation[]> => request(`/groups/${groupId}/pending`),
+  cancelInvitation: (invitationId: string): Promise<null> => request(`/groups/invitations/${invitationId}`, { method: "DELETE" }),
+  invitations: (): Promise<GroupInvitation[]> => request("/invitations"),
+  acceptInvitation: (invitationId: string): Promise<GroupInvitation> => request(`/invitations/${invitationId}/accept`, { method: "POST" }),
+  declineInvitation: (invitationId: string): Promise<GroupInvitation> => request(`/invitations/${invitationId}/decline`, { method: "POST" }),
   removeGroupMember: (groupId: string, memberId: string): Promise<null> => request(`/groups/${groupId}/members/${memberId}`, { method: "DELETE" }),
   updateGroupSharing: (groupId: string, share_memories: boolean): Promise<{ group_id: string; share_memories: boolean }> => request(`/groups/${groupId}/sharing`, {
     method: "PATCH", body: JSON.stringify({ share_memories }),
