@@ -11,6 +11,7 @@ const ownerLinks = [
   { href: "/subject/echo", label: "Talk", matches: ["/subject/echo"] },
   { href: "/subject/memories", label: "Legacy map", matches: ["/subject/memories", "/memories", "/legacy"] },
   { href: "/subject/session", label: "Record", matches: ["/subject/session", "/session"] },
+  { href: "/groups", label: "Groups", matches: ["/groups"] },
   { href: "/settings", label: "Settings", matches: ["/settings"] },
 ];
 

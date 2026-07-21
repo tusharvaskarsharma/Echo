@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from .config import get_settings
 
-from .routers import sessions, memories, echo, echo_conversation, finetune, auth, realtime, mind, profile
+from .routers import sessions, memories, echo, echo_conversation, finetune, auth, realtime, mind, profile, groups
 from .db.client import db_client
 from .auth.middleware import AuthMiddleware
 
@@ -66,6 +66,8 @@ def health_pinecone():
 
 app.include_router(auth.router)
 app.include_router(profile.router)
+app.include_router(groups.router)
+app.include_router(groups.shared_router)
 # Backward-compatible account deletion endpoint; the canonical endpoint is /auth/account.
 app.add_api_route("/account", auth.delete_account, methods=["DELETE"], status_code=204)
 app.include_router(sessions.router)

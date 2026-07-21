@@ -28,10 +28,8 @@ type Notice = { type: "success" | "error"; text: string } | null;
 type UsernameStatus = "idle" | "invalid" | "checking" | "available" | "taken";
 
 const usernameSyntaxError = (username: string) => {
-  if (username.length < 3 || username.length > 20) return "Username must be between 3 and 20 characters";
+  if (username.length < 3 || username.length > 30) return "Username must be between 3 and 30 characters";
   if (!/^[a-z0-9_]+$/.test(username)) return "Only lowercase letters, numbers and underscore allowed";
-  if (username.startsWith("_") || username.endsWith("_")) return 'Username cannot start or end with "_"';
-  if (username.includes("__")) return "Username cannot contain consecutive underscores";
   return null;
 };
 
@@ -124,6 +122,8 @@ export default function SettingsPage() {
       setNotice({ type: "error", text: usernameMessage || "Choose an available username before saving." });
       return;
     }
+    const usernameChanged = Boolean(loadedUsername.current && form.username.trim().toLowerCase() !== loadedUsername.current);
+    if (usernameChanged && !window.confirm("Change your username? Family members use it to invite you, so confirm this change before saving.")) return;
     setIsSaving(true);
     const supabase = createClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -142,6 +142,7 @@ export default function SettingsPage() {
       theme_preference: form.theme_preference,
       notifications: form.notifications,
       share_data: form.share_data,
+      confirm_username_change: usernameChanged,
     };
     const { data: { session } } = await supabase.auth.getSession();
     const response = await fetch(`${API_BASE}/profile`, {
@@ -222,7 +223,7 @@ export default function SettingsPage() {
                   <span className="relative block"><input className={usernameInputClass} placeholder="your_username" value={form.username} onChange={(event) => setValue("username", event.target.value.trim().toLowerCase())} aria-describedby="username-feedback" aria-invalid={usernameStatus === "invalid" || usernameStatus === "taken"} />
                     <span className="pointer-events-none absolute right-3.5 top-[1.05rem]">{usernameStatus === "checking" ? <LoaderCircle className="animate-spin text-text/45" size={17} /> : usernameStatus === "available" ? <Check className="text-success" size={17} /> : null}</span>
                   </span>
-                  <span id="username-feedback" className={`mt-1.5 block text-xs ${usernameStatus === "available" ? "text-success" : usernameStatus === "checking" ? "text-text/50" : "text-red-600"}`} role={usernameStatus === "invalid" || usernameStatus === "taken" ? "alert" : "status"}>{usernameMessage || "Use 3–20 lowercase letters, numbers, or underscores."}</span>
+                  <span id="username-feedback" className={`mt-1.5 block text-xs ${usernameStatus === "available" ? "text-success" : usernameStatus === "checking" ? "text-text/50" : "text-red-600"}`} role={usernameStatus === "invalid" || usernameStatus === "taken" ? "alert" : "status"}>{usernameMessage || "Use 3–30 lowercase letters, numbers, or underscores. Changes require confirmation."}</span>
                 </label>
                 <label className="sm:col-span-2 text-sm font-medium text-text/75">Bio<textarea className={`${inputClass} min-h-24 resize-y`} placeholder="A few words about you and the stories you want to preserve." value={form.bio} onChange={(event) => setValue("bio", event.target.value)} /></label>
                 <label className="text-sm font-medium text-text/75">Timezone<input className={inputClass} placeholder="Asia/Kolkata" value={form.timezone} onChange={(event) => setValue("timezone", event.target.value)} /></label>

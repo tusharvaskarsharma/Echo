@@ -1,4 +1,4 @@
-import type { ConsentLevel, Memory, Profile } from "./types";
+import type { ConsentLevel, FamilyGroup, GroupMember, Memory, Profile, SharedUser } from "./types";
 import { createClient } from "./supabase/client";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -23,6 +23,15 @@ const request = async (endpoint: string, options: RequestInit = {}) => {
   return res.json();
 };
 
+const normalizeMemories = (memories: any[]): Memory[] => memories.map((memory: any, index: number) => ({
+  ...memory,
+  time_period: memory.time_period ?? "",
+  recorded_at: memory.created_at ?? new Date().toISOString(),
+  timestamp_seconds: 0,
+  x: 20 + ((index * 31) % 60),
+  y: 25 + ((index * 47) % 50),
+}));
+
 export const api = {
   profile: async (): Promise<Profile> => {
     const supabase = createClient();
@@ -45,15 +54,28 @@ export const api = {
   
   memories: async (): Promise<Memory[]> => {
     const memories = await request("/memories");
-    return memories.map((memory: any, index: number) => ({
-      ...memory,
-      time_period: memory.time_period ?? "",
-      recorded_at: memory.created_at ?? new Date().toISOString(),
-      timestamp_seconds: 0,
-      x: 20 + ((index * 31) % 60),
-      y: 25 + ((index * 47) % 50),
-    }));
+    return normalizeMemories(memories);
   },
+
+  groups: (): Promise<FamilyGroup[]> => request("/groups"),
+  createGroup: (name: string, description?: string): Promise<{ id: string; name: string }> => request("/groups", {
+    method: "POST", body: JSON.stringify({ name, description: description || null }),
+  }),
+  updateGroup: (groupId: string, data: { name?: string; description?: string | null }): Promise<Pick<FamilyGroup, "id" | "name" | "description">> => request(`/groups/${groupId}`, {
+    method: "PATCH", body: JSON.stringify(data),
+  }),
+  deleteGroup: (groupId: string): Promise<null> => request(`/groups/${groupId}`, { method: "DELETE" }),
+  findGroupMember: (username: string): Promise<Pick<GroupMember, "user_id" | "username" | "display_name">> => request(`/groups/member-candidates?username=${encodeURIComponent(username)}`),
+  addGroupMember: (groupId: string, username: string): Promise<GroupMember> => request(`/groups/${groupId}/members`, {
+    method: "POST", body: JSON.stringify({ username }),
+  }),
+  removeGroupMember: (groupId: string, memberId: string): Promise<null> => request(`/groups/${groupId}/members/${memberId}`, { method: "DELETE" }),
+  updateGroupSharing: (groupId: string, share_memories: boolean): Promise<{ group_id: string; share_memories: boolean }> => request(`/groups/${groupId}/sharing`, {
+    method: "PATCH", body: JSON.stringify({ share_memories }),
+  }),
+  sharedUsers: (): Promise<SharedUser[]> => request("/shared-users"),
+  sharedMemories: async (ownerId: string): Promise<Memory[]> => normalizeMemories(await request(`/shared-memories/${ownerId}`)),
+  sharedMind: (ownerId: string): Promise<any> => request(`/shared-mind/${ownerId}`),
   
   patchMemory: async (id: string, consent: ConsentLevel): Promise<Memory> => {
     return request(`/memories/${id}`, {

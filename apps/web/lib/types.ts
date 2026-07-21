@@ -33,3 +33,32 @@ export type Profile = {
   memory_count: number;
 };
 
+export type GroupMember = {
+  user_id: string;
+  username: string | null;
+  display_name: string;
+  role: "owner" | "member";
+  joined_at: string;
+  is_current_user?: boolean;
+};
+
+export type FamilyGroup = {
+  id: string;
+  name: string;
+  description: string | null;
+  owner_id: string;
+  owner_name: string;
+  owner_username: string | null;
+  role: "owner" | "member";
+  member_count: number;
+  share_memories: boolean;
+  created_at: string;
+  members: GroupMember[];
+};
+
+export type SharedUser = {
+  owner_id: string;
+  subject_id: string | null;
+  username: string | null;
+  display_name: string;
+};

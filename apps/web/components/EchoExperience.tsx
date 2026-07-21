@@ -33,6 +33,8 @@ export function EchoExperience() {
   const [sending, setSending] = useState(false);
   const [mind, setMind] = useState<Mind>(null);
   const [memoryCount, setMemoryCount] = useState(0);
+  const [sharedOwners, setSharedOwners] = useState<{ owner_id: string; display_name: string; username: string | null }[]>([]);
+  const [activeOwnerId, setActiveOwnerId] = useState<string | null>(null);
   const recognition = useRef<SpeechRecognition | null>(null);
   const speech = useRef<SpeechSynthesisUtterance | null>(null);
   const pendingTimers = useRef<number[]>([]);
@@ -40,20 +42,45 @@ export function EchoExperience() {
   const latestEcho = useMemo(() => [...turns].reverse().find((turn) => turn.author === "echo"), [turns]);
   const traitCount = mind ? mind.values.length + mind.beliefs.length + mind.personality.length : 0;
   const lessonCount = mind?.life_lessons.length ?? 0;
+  const activeOwner = sharedOwners.find((owner) => owner.owner_id === activeOwnerId);
+  const sourceName = activeOwner?.display_name || "My Memories";
 
   useEffect(() => {
     let mounted = true;
-    Promise.all([api.memories(), (async () => {
+    Promise.all([api.sharedUsers(), api.memories(), (async () => {
       const { data: { session } } = await createClient().auth.getSession();
       if (!session) return null;
       const response = await fetch(`${API_BASE}/mind/latest`, { headers: { Authorization: `Bearer ${session.access_token}` } });
       return response.ok ? response.json() : null;
-    })()]).then(([memories, model]) => {
+    })()]).then(([owners, memories, model]) => {
       if (!mounted) return;
-      setMemoryCount(memories.length); setMind(model as Mind);
+      setSharedOwners(owners); setMemoryCount(memories.length); setMind(model as Mind);
     }).catch(() => undefined);
     return () => { mounted = false; pendingTimers.current.forEach(window.clearTimeout); window.speechSynthesis?.cancel(); };
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadSource = activeOwnerId
+      ? Promise.all([api.sharedMemories(activeOwnerId), api.sharedMind(activeOwnerId)])
+      : Promise.all([api.memories(), (async () => {
+          const { data: { session } } = await createClient().auth.getSession();
+          if (!session) return null;
+          const response = await fetch(`${API_BASE}/mind/latest`, { headers: { Authorization: `Bearer ${session.access_token}` } });
+          return response.ok ? response.json() : null;
+        })()]);
+    loadSource.then(([memories, model]) => {
+      if (!mounted) return;
+      setMemoryCount(memories.length); setMind(model as Mind);
+    }).catch(() => undefined);
+    return () => { mounted = false; };
+  }, [activeOwnerId]);
+
+  const selectSource = (ownerId: string) => {
+    setActiveOwnerId(ownerId || null);
+    const selected = sharedOwners.find((owner) => owner.owner_id === ownerId);
+    setTurns([{ id: `welcome-${ownerId || "mine"}`, author: "echo", text: ownerId ? `I’m here to share ${selected?.display_name || "this"}’s preserved stories. What would you like to ask?` : "I’m here to continue the stories you chose to preserve. What would you like to talk about?", timestamp: new Date(), confidence: 1, emotion: "reflective" }]);
+  };
 
   const play = (turn: Turn) => {
     window.speechSynthesis?.cancel();
@@ -79,9 +106,9 @@ export function EchoExperience() {
       const { data: { session } } = await createClient().auth.getSession();
       if (!session) throw new Error("Please sign in to talk with Echo.");
       const history = turns.slice(-12).map((turn) => ({ role: turn.author === "you" ? "user" : "echo", text: turn.text }));
-      const response = await fetch(`${API_BASE}/api/echo/conversation`, {
+      const response = await fetch(`${API_BASE}${activeOwnerId ? "/chat/shared" : "/api/echo/conversation"}`, {
         method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ question: asked, conversation_history: history, subject_id: subjectId || undefined }),
+        body: JSON.stringify(activeOwnerId ? { question: asked, conversation_history: history, owner_id: activeOwnerId } : { question: asked, conversation_history: history, subject_id: subjectId || undefined }),
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(payload?.detail || "Echo could not respond right now.");
@@ -105,7 +132,8 @@ export function EchoExperience() {
 
   return <main className="echo-experience min-h-[calc(100vh-5rem)] bg-[radial-gradient(circle_at_92%_6%,#f2e3d8_0,transparent_24%),radial-gradient(circle_at_10%_80%,#fff_0,transparent_26%),#f8f6f2] px-4 py-4 sm:px-7 lg:px-8">
     <section className="mx-auto max-w-[1440px]">
-      <header className="mb-5 flex flex-col justify-between gap-3 border-b border-primary/10 pb-4 sm:flex-row sm:items-end"><div><p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Your preserved presence</p><h1 className="mt-1 font-serif text-4xl tracking-tight text-text sm:text-5xl">Talk with Echo</h1><p className="mt-2 max-w-xl text-sm leading-6 text-text/60">Continue a conversation built from your memories, values, and life stories.</p></div><div className="flex items-center gap-2 rounded-full border border-primary/10 bg-white/60 px-4 py-2 text-sm text-text/60"><span className={`h-2 w-2 rounded-full ${sending ? "animate-pulse bg-primary" : "bg-success"}`} />{phaseLabel[phase]}</div></header>
+      <header className="mb-5 flex flex-col justify-between gap-3 border-b border-primary/10 pb-4 sm:flex-row sm:items-end"><div><p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Your preserved presence</p><h1 className="mt-1 font-serif text-4xl tracking-tight text-text sm:text-5xl">Talk with Echo</h1><p className="mt-2 max-w-xl text-sm leading-6 text-text/60">Continue a conversation built from your memories, values, and life stories.</p></div><div className="flex flex-wrap items-center gap-2"><label className="rounded-full border border-primary/15 bg-white px-3 py-2 text-sm text-text/70"><span className="mr-2 text-xs font-semibold uppercase tracking-wide text-primary">Memory source</span><select value={activeOwnerId || ""} onChange={(event) => selectSource(event.target.value)} className="bg-transparent font-medium outline-none"><option value="">My Memories</option>{sharedOwners.map((owner) => <option key={owner.owner_id} value={owner.owner_id}>{owner.display_name}</option>)}</select></label><div className="flex items-center gap-2 rounded-full border border-primary/10 bg-white/60 px-4 py-2 text-sm text-text/60"><span className={`h-2 w-2 rounded-full ${sending ? "animate-pulse bg-primary" : "bg-success"}`} />{phaseLabel[phase]}</div></div></header>
+      {activeOwner && <p className="mb-5 rounded-2xl border border-primary/15 bg-primary/7 px-4 py-3 text-sm text-primary" role="status">Currently chatting with {sourceName}&apos;s Echo. Only their permitted memory map, persona, and embeddings are used.</p>}
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
         <section className="overflow-hidden rounded-[32px] border border-primary/10 bg-white/65 shadow-[0_22px_70px_rgba(102,69,55,0.10)] backdrop-blur-sm">
           <div className="border-b border-primary/10 px-5 py-3 sm:px-6"><div className="flex items-center justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Conversation</p><h2 className="mt-1 font-serif text-2xl text-text">A voice held with care</h2></div><span className="rounded-full bg-primary/8 px-3 py-1.5 text-xs font-medium text-primary">{turns.filter((turn) => turn.author === "you").length} turns</span></div></div>

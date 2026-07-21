@@ -25,6 +25,10 @@ class ProfileUpdate(BaseModel):
     theme_preference: str | None = Field(default="system", max_length=30)
     notifications: bool = True
     share_data: bool = False
+    # A username is an identity used in group invitations.  Existing users can
+    # set it during onboarding; later changes require an intentional, explicit
+    # confirmation from the client and are also enforced here server-side.
+    confirm_username_change: bool = False
 
 
 def _trim_or_none(value: str | None) -> str | None:
@@ -73,6 +77,14 @@ async def save_profile(
 ) -> dict:
     """Save the authenticated user's profile with database-enforced uniqueness."""
     username = _validated_username(profile.username)
+    existing_username = await conn.fetchval(
+        "SELECT username FROM public.profiles WHERE id = $1", current_user["sub"]
+    )
+    if existing_username and existing_username != username and not profile.confirm_username_change:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Confirm your username change before saving it",
+        )
     try:
         row = await conn.fetchrow(
             """

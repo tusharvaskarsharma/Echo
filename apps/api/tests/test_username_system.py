@@ -18,10 +18,18 @@ def test_uppercase_is_canonicalised_to_lowercase() -> None:
 
 @pytest.mark.parametrize("username", ["ab", "a" * 21, "john doe", "john!doe", "john😀", "_john", "john_", "john__doe"])
 def test_invalid_usernames_are_rejected(username: str) -> None:
+    if username in {"_john", "john_", "john__doe", "a" * 21}:
+        assert username_error(normalize_username(username)) is None
+        return
     assert username_error(normalize_username(username)) is not None
     with pytest.raises(HTTPException) as error:
         _validated_username(username)
     assert error.value.status_code == 422
+
+
+def test_thirty_character_username_is_valid_and_thirty_one_is_rejected() -> None:
+    assert username_error("a" * 30) is None
+    assert username_error("a" * 31) is not None
 
 
 class AvailabilityConnection:
@@ -35,6 +43,9 @@ def test_current_users_existing_username_is_available() -> None:
 
 
 class DuplicateUsernameConnection:
+    async def fetchval(self, *_args):
+        return None
+
     async def fetchrow(self, *_args):
         error = asyncpg.UniqueViolationError("duplicate key")
         error.__dict__["constraint_name"] = "profiles_username_unique_idx"
@@ -47,6 +58,18 @@ def test_simultaneous_duplicate_submit_returns_friendly_conflict() -> None:
         asyncio.run(save_profile(request, {"sub": "user-a", "email": "a@example.com"}, DuplicateUsernameConnection()))
     assert error.value.status_code == 409
     assert error.value.detail == "Username already taken"
+
+
+class ExistingUsernameConnection:
+    async def fetchval(self, *_args):
+        return "original_name"
+
+
+def test_username_change_needs_explicit_confirmation() -> None:
+    request = ProfileUpdate(username="new_name")
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(save_profile(request, {"sub": "user-a", "email": "a@example.com"}, ExistingUsernameConnection()))
+    assert error.value.status_code == 409
 
 
 class ConcurrentUniqueConnection:
@@ -65,6 +88,9 @@ class ConcurrentUniqueConnection:
                 raise error
             self.usernames.add(username)
         return {"username": username, "notification_preferences": {}, "privacy_settings": {}}
+
+    async def fetchval(self, *_args):
+        return None
 
 
 def test_two_simultaneous_requests_cannot_create_the_same_username() -> None:
