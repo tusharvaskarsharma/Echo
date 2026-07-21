@@ -8,13 +8,20 @@ from app.auth.security import verify_jwt_token
 logger = logging.getLogger(__name__)
 
 # Bearer token extractor
-oauth2_scheme = HTTPBearer()
+oauth2_scheme = HTTPBearer(auto_error=False)
 
-def get_current_user(credentials: Annotated[HTTPAuthorizationCredentials, Depends(oauth2_scheme)]) -> dict:
+def get_current_user(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(oauth2_scheme)]) -> dict:
     """
     Extracts the Bearer token, verifies it, and returns the user payload.
     Returns 401 if token is missing, invalid, or expired.
     """
+    if not credentials or credentials.scheme.lower() != "bearer":
+        logger.info("Authenticated API route called without a bearer session")
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication is required. Please sign in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     token = credentials.credentials
     payload = verify_jwt_token(token)
     logger.info("Authenticated API request subject=%s", payload.get("sub"))

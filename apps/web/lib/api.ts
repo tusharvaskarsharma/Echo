@@ -3,12 +3,26 @@ import { createClient } from "./supabase/client";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
+const getAccessToken = async (): Promise<string> => {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) return session.access_token;
+
+  // Cookie-backed SSR sessions can briefly be unavailable in browser storage
+  // immediately after navigation. Refresh once before treating the user as
+  // signed out, so protected API calls never leave without a Bearer token.
+  const { data, error } = await supabase.auth.refreshSession();
+  if (error || !data.session?.access_token) {
+    throw new Error("Your sign-in session has expired. Please sign in again.");
+  }
+  return data.session.access_token;
+};
+
 const request = async (endpoint: string, options: RequestInit = {}) => {
-  const { data: { session } } = await createClient().auth.getSession();
-  if (!session) throw new Error("You must be signed in.");
+  const accessToken = await getAccessToken();
   const headers = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${session.access_token}`,
+    'Authorization': `Bearer ${accessToken}`,
     ...options.headers,
   };
   

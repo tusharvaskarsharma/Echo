@@ -23,8 +23,8 @@ def _validate_with_supabase(token: str) -> dict:
             timeout=10.0,
         )
     except httpx.RequestError as error:
-        logger.error("Supabase session validation request failed: %s", error)
-        raise HTTPException(status_code=500, detail="Authentication validation failed. Please try again.")
+        logger.exception("Supabase session validation request failed")
+        raise HTTPException(status_code=503, detail="Authentication validation is temporarily unavailable. Please try again.") from error
 
     if response.status_code != 200:
         logger.warning("Supabase rejected a bearer session with status %s", response.status_code)
