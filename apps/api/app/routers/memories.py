@@ -95,17 +95,22 @@ async def save_conversation_memory(
 
     service = SessionService(conn, user_id, user.get("email"))
     session = await service.create_session(SessionCreate())
-    # Keep the canonical session transcript as well as the immediately
-    # available memory record for clients that use this compatibility route.
+    # Keep the canonical transcript, then route this compatibility endpoint
+    # through the same one-story-per-memory processor used by live sessions.
     await service.save_transcript(str(session.id), conversation.content)
-    memory = MemoryFragment(
-        id=uuid4(), session_id=session.id, subject_id=session.subject_id,
-        content=conversation.content, emotion_tags=["reflection"], topics=["voice-session"],
-        people_mentioned=[], consent_level=ConsentLevel.PRIVATE, confidence_score=0.7,
-    )
-    saved = await repositories.create_memory(conn, memory, user_id)
-    await _index_memory(saved, user_id, conn)
     await service.update_session(str(session.id), SessionUpdate(status=SessionStatus.COMPLETED))
+    row = await conn.fetchrow(
+        "SELECT id FROM public.memories WHERE session_id = $1 AND user_id = $2 ORDER BY created_at ASC LIMIT 1",
+        session.id, user_id,
+    )
+    if not row:
+        # This should only occur when the processor rejected an empty/invalid
+        # source after session completion; never pretend the memory was saved.
+        logger.error("Structured conversation processing produced no memory for session %s", session.id)
+        raise HTTPException(status_code=500, detail="The conversation could not be processed into a memory.")
+    saved = await repositories.get_memory(conn, row["id"], user_id)
+    if not saved:
+        raise HTTPException(status_code=500, detail="The processed memory could not be loaded.")
     return saved
 
 @router.post("/draft", response_model=MemoryFragment, status_code=201)

@@ -190,11 +190,16 @@ async def conversation(
             "I don't have enough preserved memories yet. Record a few conversations first.",
             "The selected archive has no preserved memories.",
         )
-    if chunk_count == 0 or indexed_chunk_count == 0:
+    if chunk_count == 0:
         return _helpful_memory_response(
             "Your preserved memories are still being prepared for search. Please try again in a moment.",
-            "Source memories exist, but the retrieval index is not ready.",
+            "Source memories exist, but story chunks are not ready.",
         )
+    if indexed_chunk_count == 0:
+        # Chunk rows can serve exact Postgres keyword search even while an
+        # embedding provider is retrying. Do not turn usable preserved facts
+        # into an unnecessary "I don't remember" response.
+        logger.warning("No Pinecone-indexed chunks yet for owner=%s; allowing keyword retrieval fallback", owner_id)
 
     logger.info("Searching consent-approved memories owner=%s", owner_id)
     try:

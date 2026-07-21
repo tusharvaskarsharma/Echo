@@ -1,5 +1,8 @@
 import asyncio
+from collections import OrderedDict
+from hashlib import sha256
 import logging
+from typing import ClassVar
 
 import httpx
 
@@ -11,6 +14,9 @@ logger = logging.getLogger(__name__)
 
 class EmbeddingService:
     """Gemini embeddings kept at 3072 dimensions for the existing Pinecone index."""
+
+    _cache: ClassVar[OrderedDict[str, list[float]]] = OrderedDict()
+    _cache_limit: ClassVar[int] = 256
 
     def __init__(self):
         self.settings = get_settings()
@@ -29,6 +35,20 @@ class EmbeddingService:
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
+        keys = [sha256(text.encode("utf-8")).hexdigest() for text in texts]
+        missing: list[tuple[str, str]] = []
+        seen_missing: set[str] = set()
+        for key, text in zip(keys, texts):
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            elif key not in seen_missing:
+                missing.append((key, text))
+                seen_missing.add(key)
+
+        if not missing:
+            logger.debug("Embedding cache hit for %d texts", len(texts))
+            return [list(self._cache[key]) for key in keys]
+
         payload = {
             "requests": [
                 {
@@ -36,7 +56,7 @@ class EmbeddingService:
                     "content": {"parts": [{"text": text}]},
                     "outputDimensionality": 3072,
                 }
-                for text in texts
+                for _key, text in missing
             ]
         }
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.settings.gemini_embedding_model}:batchEmbedContents"
@@ -46,9 +66,15 @@ class EmbeddingService:
                     response = await client.post(url, params={"key": self.settings.gemini_api_key}, json=payload)
                     response.raise_for_status()
                 embeddings = [entry["values"] for entry in response.json()["embeddings"]]
-                if len(embeddings) != len(texts) or any(len(vector) != 3072 for vector in embeddings):
+                if len(embeddings) != len(missing) or any(len(vector) != 3072 for vector in embeddings):
                     raise ValueError("Gemini returned unexpected embedding dimensions")
-                return embeddings
+                for (key, _text), vector in zip(missing, embeddings):
+                    self._cache[key] = list(vector)
+                    self._cache.move_to_end(key)
+                while len(self._cache) > self._cache_limit:
+                    self._cache.popitem(last=False)
+                logger.debug("Embedded %d texts (%d cache hits)", len(missing), len(texts) - len(missing))
+                return [list(self._cache[key]) for key in keys]
             except Exception as error:
                 logger.error("Gemini embedding attempt %s/3 failed: %s", attempt + 1, error)
                 if attempt == 2:

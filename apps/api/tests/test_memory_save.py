@@ -3,10 +3,10 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import app.routers.memories as memory_router
-from app.models.memory import ConversationMemoryCreate
+from app.models.memory import ConsentLevel, ConversationMemoryCreate, MemoryFragment
 
 
-def test_conversation_save_indexes_memory_before_returning(monkeypatch):
+def test_conversation_save_uses_the_structured_session_processor_before_returning(monkeypatch):
     user_id = str(uuid4())
 
     class FakeSessionService:
@@ -22,27 +22,29 @@ def test_conversation_save_indexes_memory_before_returning(monkeypatch):
         async def update_session(self, _session_id, _update):
             return None
 
-    async def create_memory(_connection, memory, _owner_id):
-        return memory
+    class FakeConnection:
+        async def fetchrow(self, query, *args):
+            assert "FROM public.memories" in query
+            assert args[1] == user_id
+            return {"id": "memory-1"}
 
-    indexed = []
-
-    async def index_memory(payload, owner_id, **_kwargs):
-        indexed.append((payload, owner_id))
+    async def get_memory(_connection, memory_id, owner_id):
+        assert memory_id == "memory-1" and owner_id == user_id
+        return MemoryFragment(
+            id="memory-1", session_id="session-1", subject_id=user_id,
+            content="A conversation worth keeping.", emotion_tags=["reflective"], topics=["stories"],
+            people_mentioned=[], consent_level=ConsentLevel.PRIVATE, confidence_score=0.8,
+        )
 
     monkeypatch.setattr(memory_router, "SessionService", FakeSessionService)
-    monkeypatch.setattr(memory_router.repositories, "create_memory", create_memory)
-    monkeypatch.setattr(memory_router, "index_memory", index_memory)
+    monkeypatch.setattr(memory_router.repositories, "get_memory", get_memory)
 
     saved = asyncio.run(
         memory_router.save_conversation_memory(
             ConversationMemoryCreate(content="A conversation worth keeping."),
             {"sub": user_id, "email": "person@example.com"},
-            object(),
+            FakeConnection(),
         )
     )
 
     assert saved.content == "A conversation worth keeping."
-    assert str(saved.subject_id) == user_id
-    assert indexed[0][0]["id"] == str(saved.id)
-    assert indexed[0][1] == user_id

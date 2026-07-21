@@ -62,3 +62,15 @@ def test_extractor_drops_invalid_provider_output_without_persisting_partial_memo
     service.groq = FakeGroq(invalid)
 
     assert asyncio.run(service.extract_memories([{"start": 0, "end": 1, "text": "hello"}])) == []
+
+
+def test_batch_extractor_keeps_each_story_attached_to_its_source_index():
+    service = MemoryExtractorService()
+    service.groq = FakeGroq({"memories": [{**VALID_MEMORY, "source_index": 0}]})
+
+    extracted = asyncio.run(service.extract_structured_memories([
+        "Echo: What did you enjoy? You: I enjoyed hiking with my children.",
+    ]))
+
+    assert list(extracted) == [0]
+    assert extracted[0].semantic_metadata["title"] == VALID_MEMORY["title"]

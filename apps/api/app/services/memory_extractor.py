@@ -1,5 +1,6 @@
 """Strict, evidence-only semantic memory extraction for long-term retrieval."""
 
+import asyncio
 import json
 from typing import Literal
 
@@ -20,6 +21,11 @@ MemoryType = Literal[
     "conversation", "preference", "goal", "event", "relationship", "knowledge",
     "experience", "reminder",
 ]
+MemoryCategory = Literal[
+    "Identity", "Family", "Childhood", "Career", "Relationships", "Values",
+    "Stories", "Advice", "Preferences", "Legacy",
+]
+ImportanceLevel = Literal["critical", "high", "medium", "low"]
 
 
 class MemoryEmotion(BaseModel):
@@ -33,16 +39,20 @@ class SemanticMemory(BaseModel):
     title: str = Field(min_length=1)
     summary: str = Field(min_length=1)
     context: str = Field(min_length=1)
+    category: MemoryCategory = "Stories"
     important_facts: list[str] = Field(default_factory=list)
     user_preferences: list[str] = Field(default_factory=list)
     people: list[str] = Field(default_factory=list)
     places: list[str] = Field(default_factory=list)
+    objects: list[str] = Field(default_factory=list)
+    time_reference: str | None = None
     topics: list[str] = Field(min_length=3, max_length=10)
     keywords: list[str] = Field(min_length=10, max_length=20)
     emotion: MemoryEmotion
     intent: IntentName
     memory_type: MemoryType
     importance_score: float = Field(ge=0, le=1)
+    importance_level: ImportanceLevel = "medium"
     search_document: str = Field(min_length=1)
 
     @field_validator("title")
@@ -82,6 +92,16 @@ class ExtractedMemory(BaseModel):
         )
 
 
+class IndexedSemanticMemory(SemanticMemory):
+    """A semantic memory matched to one immutable story unit supplied by Echo."""
+
+    source_index: int = Field(ge=0)
+
+
+class SemanticMemoryBatch(BaseModel):
+    memories: list[IndexedSemanticMemory] = Field(default_factory=list)
+
+
 class MemoryExtractorService:
     """Ask Groq for one validated semantic memory from a session transcript."""
 
@@ -106,11 +126,11 @@ Use only facts explicitly present in the transcript. Do not infer, speculate,
 or invent facts, preferences, people, places, dates, motives, or opinions.
 Return ONLY a valid JSON object with exactly this schema:
 {{
-  "title": "", "summary": "", "context": "", "important_facts": [],
-  "user_preferences": [], "people": [], "places": [], "topics": [],
+  "title": "", "summary": "", "context": "", "category": "Stories", "important_facts": [],
+  "user_preferences": [], "people": [], "places": [], "objects": [], "time_reference": null, "topics": [],
   "keywords": [], "emotion": {{"primary": "neutral", "confidence": 0.0}},
   "intent": "", "memory_type": "", "importance_score": 0.0,
-  "search_document": ""
+  "importance_level": "medium", "search_document": ""
 }}
 
 Constraints:
@@ -124,6 +144,9 @@ Constraints:
   problem_solving.
 - memory_type must be one of: conversation, preference, goal, event,
   relationship, knowledge, experience, reminder.
+- category must be Identity, Family, Childhood, Career, Relationships,
+  Values, Stories, Advice, Preferences, or Legacy.
+- importance_level must be critical, high, medium, or low.
 - search_document is the only text embedded. Write it as one natural paragraph
   combining the title, summary, context, facts, preferences, topics, keywords,
   emotion, and intent. Do not include JSON, timestamps, speaker labels, or a
@@ -153,3 +176,65 @@ Transcript:
             # persisted; storing invented or partial memories is worse than a retry.
             return []
         return [ExtractedMemory.from_semantic_memory(semantic_memory)]
+
+    async def extract_structured_memories(self, story_units: list[str]) -> dict[int, ExtractedMemory]:
+        """Enrich independent interview stories in small concurrent batches.
+
+        The transcript stays authoritative in ``sessions.transcript``.  This
+        method produces only metadata for each already-separated story, so the
+        model can never merge facts from unrelated answers into one memory.
+        """
+        indexed_units = [(index, text.strip()) for index, text in enumerate(story_units) if text and text.strip()]
+        if not indexed_units:
+            return {}
+
+        async def extract_batch(batch: list[tuple[int, str]]) -> dict[int, ExtractedMemory]:
+            sources = "\n\n".join(f"SOURCE {index}:\n{text}" for index, text in batch)
+            prompt = f"""
+You are ECHO's structured memory processor. Each SOURCE below is a single,
+complete interview question-and-answer or life story. Return a JSON object:
+{{"memories": [ ... ]}}. Create at most one record per SOURCE and never merge
+facts between sources. Omit a source only when it contains no personal fact.
+
+Every record must have source_index, title, summary, context, category,
+important_facts, user_preferences, people, places, objects, time_reference,
+topics, keywords, emotion, intent, memory_type, importance_score,
+importance_level, and search_document. Use only explicit evidence. The
+search_document must include the concise summary, facts, people, category,
+keywords, and the source's original answer in natural language.
+
+Categories: Identity, Family, Childhood, Career, Relationships, Values,
+Stories, Advice, Preferences, Legacy.
+Importance: critical for identity/immediate family/life-defining values;
+high for major events, achievements, regrets, career, and relationships;
+medium for meaningful preferences; low only for minor details.
+
+{sources}
+""".strip()
+            try:
+                raw = await self.groq.complete(
+                    [
+                        {"role": "system", "content": "Return schema-valid JSON only. Never infer facts."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    json_mode=True,
+                )
+                parsed = SemanticMemoryBatch.model_validate(json.loads(raw))
+            except (json.JSONDecodeError, ValueError):
+                return {}
+            allowed = {index for index, _text in batch}
+            return {
+                memory.source_index: ExtractedMemory.from_semantic_memory(memory)
+                for memory in parsed.memories
+                if memory.source_index in allowed
+            }
+
+        # Eight units keeps prompt sizes modest while allowing independent
+        # provider requests to overlap, substantially reducing ingest latency.
+        batches = [indexed_units[index:index + 8] for index in range(0, len(indexed_units), 8)]
+        results = await asyncio.gather(*(extract_batch(batch) for batch in batches), return_exceptions=True)
+        extracted: dict[int, ExtractedMemory] = {}
+        for result in results:
+            if isinstance(result, dict):
+                extracted.update(result)
+        return extracted

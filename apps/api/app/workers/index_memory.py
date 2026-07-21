@@ -13,6 +13,7 @@ from app.models.memory import MemoryFragment
 from app.services.memory_chunking import MemoryChunk, build_memory_chunks
 
 logger = logging.getLogger(__name__)
+INDEX_FORMAT_VERSION = "structured-story-v2"
 
 
 def vector_id_for(memory_id: str, chunk: MemoryChunk) -> str:
@@ -80,7 +81,7 @@ async def _mark_chunks_indexed(
         """,
         memory_id,
         datetime.now(timezone.utc),
-        embedding_model,
+        f"{embedding_model}:{INDEX_FORMAT_VERSION}",
         embedding_dimensions,
     )
 
@@ -107,9 +108,17 @@ def _vector_metadata(memory: MemoryFragment, owner_id: str, chunk: MemoryChunk) 
         "keywords": chunk.keywords,
         "content": chunk.content,
         "title": metadata.get("title", ""),
+        "summary": metadata.get("summary", ""),
         "intent": metadata.get("intent", ""),
         "memory_type": metadata.get("memory_type", ""),
         "importance_score": metadata.get("importance_score", 0),
+        "importance_level": metadata.get("importance_level", "medium"),
+        "tags": metadata.get("tags", []),
+        "people": metadata.get("people", memory.people_mentioned),
+        "places": metadata.get("places", []),
+        "objects": metadata.get("objects", []),
+        "time_reference": metadata.get("time_reference", ""),
+        "related_memory_ids": metadata.get("related_memory_ids", []),
     }
 
 
@@ -119,29 +128,40 @@ async def _index_memory_async(
     *,
     conn: asyncpg.Connection | None = None,
 ) -> list[MemoryChunk]:
-    """Create story chunks, embed every one, and upsert all vectors.
+    chunks_by_memory = await index_memories([memory_payload], user_id, conn=conn)
+    return chunks_by_memory[0] if chunks_by_memory else []
 
-    The caller may pass its request transaction connection.  If Postgres is
-    temporarily unavailable, vector indexing can still proceed, but the
-    missing ``indexed_at`` marker makes the gap visible and keyword fallback
-    remains unavailable until a later reindex.
-    """
-    memory = MemoryFragment.model_validate(memory_payload)
+
+async def index_memories(
+    memory_payloads: list[dict],
+    user_id: str,
+    *,
+    conn: asyncpg.Connection | None = None,
+) -> list[list[MemoryChunk]]:
+    """Batch-persist, embed, and index all story units from one interview."""
+    memories = [MemoryFragment.model_validate(payload) for payload in memory_payloads]
     owner_id = str(user_id)
-    chunks = build_memory_chunks(memory)
-    if not chunks:
+    chunks_by_memory = [build_memory_chunks(memory) for memory in memories]
+    if any(not chunks for chunks in chunks_by_memory):
         raise ValueError("Cannot index a memory with no readable content")
 
     if conn is not None:
-        await _persist_chunks(conn, memory, owner_id, chunks)
+        for memory, chunks in zip(memories, chunks_by_memory):
+            await _persist_chunks(conn, memory, owner_id, chunks)
 
     from app.services.embedding_service import EmbeddingService
     from app.services.pinecone_service import PineconeService
 
     embedding_service = EmbeddingService()
-    embedding_inputs = [chunk.content for chunk in chunks]
-    embeddings = await embedding_service.embed_texts(embedding_inputs)
-    if len(embeddings) != len(chunks):
+    flat_pairs = [
+        (memory, chunk)
+        for memory, chunks in zip(memories, chunks_by_memory)
+        for chunk in chunks
+    ]
+    # Embedding the structured search text gives summary/category/entity terms
+    # semantic weight while the raw chunk remains the evidence sent to Echo.
+    embeddings = await embedding_service.embed_texts([chunk.search_text for _memory, chunk in flat_pairs])
+    if len(embeddings) != len(flat_pairs):
         raise RuntimeError("Embedding provider returned an incomplete chunk batch")
 
     vectors = [
@@ -150,20 +170,18 @@ async def _index_memory_async(
             "values": embedding,
             "metadata": _vector_metadata(memory, owner_id, chunk),
         }
-        for chunk, embedding in zip(chunks, embeddings)
+        for (memory, chunk), embedding in zip(flat_pairs, embeddings)
     ]
-    # Namespace by immutable owner, not by a presentation-layer subject id.
     PineconeService().upsert_vectors(owner_id, vectors)
 
     if conn is not None:
-        await _mark_chunks_indexed(
-            conn,
-            str(memory.id),
-            embedding_service.settings.gemini_embedding_model,
-            len(embeddings[0]) if embeddings else 0,
-        )
-    logger.info("Indexed memory %s as %d story chunks for owner %s", memory.id, len(chunks), owner_id)
-    return chunks
+        dimensions = len(embeddings[0]) if embeddings else 0
+        for memory in memories:
+            await _mark_chunks_indexed(
+                conn, str(memory.id), embedding_service.settings.gemini_embedding_model, dimensions,
+            )
+    logger.info("Indexed %d structured memories as %d story chunks for owner %s", len(memories), len(vectors), owner_id)
+    return chunks_by_memory
 
 
 async def index_memory(
@@ -182,6 +200,9 @@ async def reindex_owner_memories(conn: asyncpg.Connection, owner_id: str, *, lim
     indexing are re-embedded on their next retrieval instead of requiring an
     operator to export, delete, or manually re-upload an interview.
     """
+    from app.services.embedding_service import EmbeddingService
+
+    expected_embedding_model = f"{EmbeddingService().settings.gemini_embedding_model}:{INDEX_FORMAT_VERSION}"
     rows = await conn.fetch(
         """
         SELECT m.*
@@ -191,13 +212,15 @@ async def reindex_owner_memories(conn: asyncpg.Connection, owner_id: str, *, lim
             NOT EXISTS (SELECT 1 FROM public.memory_chunks c WHERE c.memory_id = m.id)
             OR EXISTS (
               SELECT 1 FROM public.memory_chunks c
-              WHERE c.memory_id = m.id AND c.indexed_at IS NULL
+              WHERE c.memory_id = m.id
+                AND (c.indexed_at IS NULL OR c.embedding_model IS DISTINCT FROM $2)
             )
           )
         ORDER BY m.created_at ASC
-        LIMIT $2
+        LIMIT $3
         """,
         owner_id,
+        expected_embedding_model,
         limit,
     )
     repaired = 0

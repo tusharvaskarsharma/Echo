@@ -12,7 +12,8 @@ def test_fallback_memory_indexing_preserves_retrieval_metadata(monkeypatch):
             return memory.content
 
         async def embed_texts(self, texts):
-            assert texts == ["A story worth preserving"]
+            assert len(texts) == 1
+            assert "Source evidence: A story worth preserving" in texts[0]
             return [[0.25, 0.75]]
 
     class FakePinecone:

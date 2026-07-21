@@ -1,24 +1,16 @@
-"""Story-preserving chunks and retrieval metadata for archived memories.
-
-The first version of Echo embedded an entire interview in one vector.  That
-works for a short note, but an interview can contain many unrelated stories;
-one vector cannot reliably represent every fact in it.  This module produces
-small, readable evidence units without cutting through sentences or an
-interview question/answer pair.
-"""
+"""Story-preserving structured units and retrieval chunks for Echo memories."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from typing import Iterable
+from typing import Any, Iterable
 
 from app.models.memory import MemoryFragment
 
 
-# A chunk is deliberately allowed to exceed the preferred size when it is one
-# interview exchange.  Preserving a complete answer is more important than
-# forcing a story through an arbitrary token boundary.
+# A complete question/answer exchange always wins over a fixed length.  These
+# limits apply only to ordinary prose paragraphs with several full sentences.
 PREFERRED_CHUNK_CHARS = 1_200
 MAX_CHUNKS_PER_MEMORY = 32
 
@@ -40,6 +32,8 @@ STOP_WORDS = frozenset({
     "it", "me", "my", "of", "on", "or", "that", "the", "their", "they", "to", "was", "what", "when", "who", "with", "you", "your",
 })
 SPEAKER_LINE = re.compile(r"^(?:echo|interviewer|question|q|assistant|user|you|answer|a)\s*:\s*", re.IGNORECASE)
+QUESTION_LINE = re.compile(r"^(?:echo|interviewer|question|q|assistant)\s*:\s*(.+)$", re.IGNORECASE)
+ANSWER_LINE = re.compile(r"^(?:user|you|answer|a)\s*:\s*(.+)$", re.IGNORECASE)
 SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"'])")
 WORD = re.compile(r"[a-zA-Z][a-zA-Z'-]{1,}")
 
@@ -50,10 +44,23 @@ class MemoryChunk:
     content: str
     category: str
     keywords: list[str]
+    search_text: str
 
     @property
     def vector_id_suffix(self) -> str:
         return f"chunk-{self.chunk_index}"
+
+
+@dataclass(frozen=True)
+class StoryUnit:
+    """A complete, independently retrievable life event or Q&A exchange."""
+
+    content: str
+    category: str
+    keywords: list[str]
+    title: str
+    summary: str
+    importance_score: float
 
 
 def _normalise(text: str) -> str:
@@ -68,7 +75,9 @@ def _paragraphs(text: str) -> list[str]:
 
     def flush() -> None:
         if current:
-            block = _normalise(" ".join(current))
+            # Retain line boundaries until the caller has paired a question
+            # with its answer and derived its title/summary metadata.
+            block = "\n".join(current).strip()
             if block:
                 blocks.append(block)
             current.clear()
@@ -77,10 +86,9 @@ def _paragraphs(text: str) -> list[str]:
         if not line:
             flush()
             continue
-        # A new interviewer question starts a fresh exchange, but its answer
-        # remains together with it.  This is the key distinction from token
-        # slicing, which formerly separated the question from its evidence.
-        if SPEAKER_LINE.match(line) and current and re.match(r"^(?:echo|interviewer|question|q|assistant)\s*:", line, re.IGNORECASE):
+        # A new interviewer prompt begins a new atomic exchange. Its answer
+        # remains in the same unit, protecting the question's context.
+        if QUESTION_LINE.match(line) and current:
             flush()
         current.append(line)
     flush()
@@ -94,8 +102,6 @@ def _sentence_groups(block: str) -> Iterable[str]:
         return
     sentences = [part.strip() for part in SENTENCE_BREAK.split(block) if part.strip()]
     if len(sentences) < 2:
-        # An unusually long single sentence is still kept intact.  A complete
-        # sentence is safer evidence than a truncated fragment.
         yield block
         return
     current: list[str] = []
@@ -133,21 +139,98 @@ def extract_keywords(text: str, extra_terms: Iterable[str] = ()) -> list[str]:
     return terms[:32]
 
 
+def _answer_text(exchange: str) -> str:
+    answers = [match.group(1).strip() for line in exchange.split("\n") if (match := ANSWER_LINE.match(line.strip()))]
+    if answers:
+        return _normalise(" ".join(answers))
+    # Lines have sometimes been normalised by a browser before persistence;
+    # leave the full evidence untouched rather than guessing at a split.
+    return _normalise(exchange)
+
+
+def _title_for(exchange: str, category: str) -> str:
+    for line in exchange.split("\n"):
+        if match := QUESTION_LINE.match(line.strip()):
+            question = match.group(1).strip().rstrip("?.!")
+            return question[:100] or f"{category} memory"
+    return f"{category} memory"
+
+
+def _short_summary(text: str) -> str:
+    sentences = [part.strip() for part in SENTENCE_BREAK.split(_normalise(text)) if part.strip()]
+    summary = " ".join(sentences[:2]) or _normalise(text)
+    return summary[:700].rstrip()
+
+
+def importance_for_category(category: str) -> float:
+    return {
+        "Identity": 1.0, "Family": 0.96, "Relationships": 0.94, "Values": 0.94,
+        "Legacy": 0.92, "Career": 0.86, "Childhood": 0.84, "Stories": 0.78,
+        "Advice": 0.78, "Preferences": 0.66,
+    }.get(category, 0.72)
+
+
+def build_story_units(transcript: str, fallback_topics: Iterable[str] = ()) -> list[StoryUnit]:
+    """Split an interview into complete, user-visible structured memories."""
+    units: list[StoryUnit] = []
+    for exchange in _paragraphs(transcript):
+        pieces = [exchange] if SPEAKER_LINE.search(exchange) else list(_sentence_groups(exchange))
+        for piece in pieces:
+            content = _normalise(piece)
+            if not content:
+                continue
+            category = classify_category(content, fallback_topics)
+            answer = _answer_text(piece)
+            units.append(StoryUnit(
+                content=content,
+                category=category,
+                keywords=extract_keywords(content, [*fallback_topics, category]),
+                title=_title_for(piece, category),
+                summary=_short_summary(answer),
+                importance_score=importance_for_category(category),
+            ))
+    return units[:MAX_CHUNKS_PER_MEMORY]
+
+
+def _metadata_values(metadata: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for key in ("title", "summary", "context", "category", "importance_level"):
+        if metadata.get(key):
+            values.append(str(metadata[key]))
+    for key in ("important_facts", "user_preferences", "people", "places", "objects", "topics", "keywords", "tags"):
+        value = metadata.get(key, [])
+        if isinstance(value, list):
+            values.extend(str(item) for item in value)
+    return values
+
+
+def _search_text(content: str, category: str, keywords: list[str], metadata: dict[str, Any]) -> str:
+    """Search the concise summary and metadata, then retain source evidence."""
+    title = str(metadata.get("title") or "Preserved memory")
+    summary = str(metadata.get("summary") or "")
+    facts = "; ".join(str(item) for item in _normalise_metadata_list(metadata.get("important_facts")))
+    people = ", ".join(str(item) for item in _normalise_metadata_list(metadata.get("people")))
+    return _normalise(
+        f"Title: {title}. Summary: {summary}. Category: {category}. "
+        f"Facts: {facts}. People: {people}. Tags: {', '.join(keywords)}. Source evidence: {content}"
+    )
+
+
+def _normalise_metadata_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def build_memory_chunks(memory: MemoryFragment) -> list[MemoryChunk]:
-    """Build stable chunks from a memory's canonical, unmodified evidence."""
-    # Preserve newlines until after Q&A/paragraph detection.  Normalising the
-    # whole transcript first would collapse every interview exchange into one
-    # large block and defeat story-preserving chunking.
+    """Build stable chunks from canonical evidence and its structured summary."""
     source = memory.content.strip()
     if not source:
         return []
 
-    metadata = memory.semantic_metadata or {}
-    metadata_keywords = metadata.get("keywords", []) if isinstance(metadata, dict) else []
+    metadata = memory.semantic_metadata if isinstance(memory.semantic_metadata, dict) else {}
+    metadata_keywords = metadata.get("keywords", []) if isinstance(metadata.get("keywords"), list) else []
+    metadata_tags = metadata.get("tags", []) if isinstance(metadata.get("tags"), list) else []
     expanded: list[str] = []
     for paragraph in _paragraphs(source):
-        # Never split explicit Q&A/dialogue exchanges.  A normal long prose
-        # paragraph is divided between sentences only.
         if SPEAKER_LINE.search(paragraph):
             expanded.append(paragraph)
         else:
@@ -155,11 +238,10 @@ def build_memory_chunks(memory: MemoryFragment) -> list[MemoryChunk]:
 
     chunks: list[MemoryChunk] = []
     for text in expanded[:MAX_CHUNKS_PER_MEMORY]:
-        category = classify_category(text, memory.topics)
+        category = str(metadata.get("category") or classify_category(text, memory.topics))
+        keywords = extract_keywords(text, [*memory.topics, *memory.people_mentioned, *metadata_keywords, *metadata_tags, category])
         chunks.append(MemoryChunk(
-            chunk_index=len(chunks),
-            content=text,
-            category=category,
-            keywords=extract_keywords(text, [*memory.topics, *memory.people_mentioned, *metadata_keywords]),
+            chunk_index=len(chunks), content=text, category=category, keywords=keywords,
+            search_text=_search_text(text, category, keywords, metadata),
         ))
     return chunks

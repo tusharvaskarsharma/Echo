@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+import json
 import re
 from typing import Any, Dict, List
 
 import asyncpg
 
 from app.services.embedding_service import EmbeddingService
+from app.services.memory_chunking import CATEGORY_KEYWORDS
 from app.services.pinecone_service import PineconeService
 
 logger = logging.getLogger(__name__)
@@ -32,11 +34,51 @@ def _question_terms(question: str) -> list[str]:
 
 
 def _normalise_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return [value]
     if isinstance(value, list):
         return [str(item) for item in value]
     if isinstance(value, tuple):
         return [str(item) for item in value]
     return []
+
+
+def _metadata(candidate: dict[str, Any]) -> dict[str, Any]:
+    raw = candidate.get("semantic_metadata")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            raw = {}
+    metadata = dict(raw) if isinstance(raw, dict) else {}
+    for key in (
+        "title", "summary", "category", "importance_score", "importance_level",
+        "tags", "people", "places", "objects", "related_memory_ids",
+    ):
+        if candidate.get(key) not in (None, "", [], {}):
+            metadata[key] = candidate[key]
+    return metadata
+
+
+def _hydrate_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+    metadata = _metadata(candidate)
+    candidate["semantic_metadata"] = metadata
+    for key in ("title", "summary", "category", "importance_score", "importance_level", "tags", "people", "places", "objects", "related_memory_ids"):
+        if candidate.get(key) in (None, "", [], {}):
+            candidate[key] = metadata.get(key)
+    return candidate
+
+
+def _question_categories(question: str) -> set[str]:
+    lowered = question.lower()
+    return {
+        category
+        for category, keywords in CATEGORY_KEYWORDS
+        if any(keyword.strip() and keyword.strip() in lowered for keyword in keywords)
+    }
 
 
 def _keyword_score(question_terms: list[str], candidate: dict[str, Any]) -> float:
@@ -48,9 +90,41 @@ def _keyword_score(question_terms: list[str], candidate: dict[str, Any]) -> floa
         " ".join(_normalise_list(candidate.get("keywords"))),
         " ".join(_normalise_list(candidate.get("topics"))),
         " ".join(_normalise_list(candidate.get("people_mentioned"))),
+        str(candidate.get("title") or ""),
+        str(candidate.get("summary") or ""),
+        " ".join(_normalise_list(candidate.get("tags"))),
+        " ".join(_normalise_list(candidate.get("people"))),
+        " ".join(_normalise_list(candidate.get("places"))),
+        " ".join(_normalise_list(candidate.get("objects"))),
     ]).lower()
     matches = sum(1 for term in question_terms if re.search(rf"\b{re.escape(term)}\b", searchable))
     return matches / len(question_terms)
+
+
+def _metadata_score(question_terms: list[str], question_categories: set[str], candidate: dict[str, Any]) -> float:
+    metadata = _metadata(candidate)
+    category = str(metadata.get("category") or candidate.get("category") or "")
+    category_match = 0.45 if category in question_categories else 0.0
+    metadata_terms = " ".join([
+        " ".join(_normalise_list(metadata.get("tags"))),
+        " ".join(_normalise_list(metadata.get("people"))),
+        " ".join(_normalise_list(metadata.get("places"))),
+        " ".join(_normalise_list(metadata.get("objects"))),
+        str(metadata.get("title") or ""),
+        str(metadata.get("summary") or ""),
+    ]).lower()
+    if not question_terms:
+        return category_match
+    overlap = sum(1 for term in question_terms if re.search(rf"\b{re.escape(term)}\b", metadata_terms)) / len(question_terms)
+    return min(1.0, category_match + (overlap * 0.55))
+
+
+def _importance_score(candidate: dict[str, Any]) -> float:
+    metadata = _metadata(candidate)
+    try:
+        return max(0.0, min(1.0, float(metadata.get("importance_score") or candidate.get("importance_score") or 0.5)))
+    except (TypeError, ValueError):
+        return 0.5
 
 
 def _candidate_key(candidate: dict[str, Any]) -> str:
@@ -95,16 +169,20 @@ class RetrievalService:
                 SELECT
                   c.vector_id AS embedding_id, c.memory_id, c.chunk_index, c.category, c.content, c.keywords,
                   m.session_id, m.subject_id, m.consent_level, m.emotion_tags, m.topics,
-                  m.people_mentioned, m.time_period, m.confidence_score,
-                  ts_rank_cd(to_tsvector('english', c.content), query.terms) AS database_keyword_rank
+                  m.people_mentioned, m.time_period, m.confidence_score, m.search_document, m.semantic_metadata,
+                  ts_rank_cd(
+                    to_tsvector('english', concat_ws(' ', c.content, m.search_document, m.semantic_metadata->>'title', m.semantic_metadata->>'summary')),
+                    query.terms
+                  ) AS database_keyword_rank
                 FROM public.memory_chunks c
                 JOIN public.memories m ON m.id = c.memory_id
                 CROSS JOIN query
                 WHERE c.user_id = $1
                   AND m.consent_level = ANY($2::text[])
                   AND (
-                    to_tsvector('english', c.content) @@ query.terms
+                    to_tsvector('english', concat_ws(' ', c.content, m.search_document, m.semantic_metadata->>'title', m.semantic_metadata->>'summary')) @@ query.terms
                     OR lower(c.content) LIKE ANY($4::text[])
+                    OR lower(COALESCE(m.search_document, '')) LIKE ANY($4::text[])
                     OR EXISTS (
                       SELECT 1
                       FROM jsonb_array_elements_text(c.keywords) AS keyword(value)
@@ -124,7 +202,38 @@ class RetrievalService:
             logger.exception("Keyword retrieval query failed for owner %s", owner_id)
             return []
 
-        return [dict(row) for row in rows]
+        return [_hydrate_candidate(dict(row)) for row in rows]
+
+    async def _related_candidates(
+        self,
+        conn: asyncpg.Connection | None,
+        owner_id: str,
+        allowed_consent_levels: list[str],
+        related_memory_ids: list[str],
+    ) -> list[dict[str, Any]]:
+        """Load linked stories only after a directly relevant memory wins."""
+        if conn is None or not related_memory_ids:
+            return []
+        try:
+            rows = await conn.fetch(
+                """
+                SELECT c.vector_id AS embedding_id, c.memory_id, c.chunk_index, c.category, c.content, c.keywords,
+                       m.session_id, m.subject_id, m.consent_level, m.emotion_tags, m.topics,
+                       m.people_mentioned, m.time_period, m.confidence_score, m.search_document, m.semantic_metadata
+                FROM public.memory_chunks c
+                JOIN public.memories m ON m.id = c.memory_id
+                WHERE c.user_id = $1
+                  AND m.consent_level = ANY($2::text[])
+                  AND c.memory_id::text = ANY($3::text[])
+                ORDER BY c.updated_at DESC
+                LIMIT 8
+                """,
+                owner_id, allowed_consent_levels, related_memory_ids,
+            )
+        except asyncpg.PostgresError:
+            logger.exception("Related-memory expansion failed for owner %s", owner_id)
+            return []
+        return [_hydrate_candidate(dict(row)) for row in rows]
 
     async def retrieve_memories(
         self,
@@ -144,7 +253,8 @@ class RetrievalService:
         """
         question = question.strip()
         terms = _question_terms(question)
-        logger.info("Retrieval question=%r owner=%s terms=%s", question, owner_id, terms)
+        categories = _question_categories(question)
+        logger.info("Retrieval question=%r owner=%s terms=%s categories=%s", question, owner_id, terms, sorted(categories))
         await self._ensure_legacy_index(conn, owner_id)
 
         candidates: dict[str, dict[str, Any]] = {}
@@ -176,7 +286,7 @@ class RetrievalService:
             matches = []
 
         for match in matches:
-            metadata = dict(match.get("metadata") or {})
+            metadata = _hydrate_candidate(dict(match.get("metadata") or {}))
             if not metadata.get("content"):
                 continue
             metadata["embedding_id"] = str(match.get("id") or metadata.get("embedding_id") or "")
@@ -191,14 +301,21 @@ class RetrievalService:
 
         ranked: list[dict[str, Any]] = []
         for candidate in candidates.values():
+            candidate = _hydrate_candidate(candidate)
             semantic = float(candidate.get("semantic_score") or 0.0)
             keyword = _keyword_score(terms, candidate)
+            metadata_score = _metadata_score(terms, categories, candidate)
+            importance = _importance_score(candidate)
             # Pinecone scores below the old 0.52/0.72 hard cut are still
             # useful when a question shares precise family names or facts.
-            if semantic < min_score and keyword == 0:
+            if semantic < min_score and keyword == 0 and metadata_score < 0.35:
                 continue
             candidate["keyword_score"] = round(keyword, 4)
-            candidate["retrieval_score"] = round((semantic * 0.68) + (keyword * 0.32), 4)
+            candidate["metadata_score"] = round(metadata_score, 4)
+            candidate["importance_score"] = round(importance, 4)
+            candidate["retrieval_score"] = round(
+                (semantic * 0.50) + (keyword * 0.25) + (metadata_score * 0.15) + (importance * 0.10), 4,
+            )
             candidate["id"] = str(candidate.get("memory_id") or candidate.get("id") or "")
             ranked.append(candidate)
 
@@ -217,6 +334,37 @@ class RetrievalService:
             if len(selected) == top_k:
                 break
 
+        # A direct match such as "father" can have a linked childhood story or
+        # lesson that gives the answer useful human context.  These linked
+        # chunks never replace direct evidence and remain subject to the same
+        # owner and consent checks in Postgres.
+        related_ids = list(dict.fromkeys(
+            related_id
+            for candidate in selected
+            for related_id in _normalise_list(candidate.get("related_memory_ids"))
+        ))
+        existing_keys = {_candidate_key(candidate) for candidate in selected}
+        for candidate in await self._related_candidates(conn, owner_id, allowed_consent_levels, related_ids):
+            if len(selected) >= top_k:
+                break
+            if _candidate_key(candidate) in existing_keys:
+                continue
+            candidate["semantic_score"] = 0.0
+            candidate["keyword_score"] = round(_keyword_score(terms, candidate), 4)
+            candidate["metadata_score"] = round(_metadata_score(terms, categories, candidate), 4)
+            candidate["importance_score"] = round(_importance_score(candidate), 4)
+            candidate["related_score"] = 0.15
+            candidate["retrieval_score"] = round(
+                (candidate["keyword_score"] * 0.25)
+                + (candidate["metadata_score"] * 0.15)
+                + (candidate["importance_score"] * 0.10)
+                + candidate["related_score"],
+                4,
+            )
+            candidate["id"] = str(candidate.get("memory_id") or candidate.get("id") or "")
+            selected.append(candidate)
+            existing_keys.add(_candidate_key(candidate))
+
         logger.info(
             "Retrieval selected=%s",
             [
@@ -225,6 +373,9 @@ class RetrievalService:
                     "embedding_id": item.get("embedding_id"),
                     "semantic_score": item.get("semantic_score"),
                     "keyword_score": item.get("keyword_score"),
+                    "metadata_score": item.get("metadata_score"),
+                    "importance_score": item.get("importance_score"),
+                    "related_score": item.get("related_score", 0),
                     "retrieval_score": item.get("retrieval_score"),
                     "category": item.get("category"),
                 }

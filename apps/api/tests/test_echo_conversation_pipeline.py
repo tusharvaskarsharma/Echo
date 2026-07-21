@@ -77,6 +77,30 @@ def test_empty_archive_returns_helpful_200_response(monkeypatch):
     assert "Record a few conversations" in response.text
 
 
+def test_chunks_can_answer_through_keyword_fallback_before_vector_indexing(monkeypatch):
+    class KeywordRetrieval:
+        async def retrieve_memories(self, *_args, **_kwargs):
+            return [_retrieved_memory()]
+
+    class FailingPlanner:
+        async def plan(self, *_args, **_kwargs):
+            raise ValueError("planner is optional")
+
+    class FakeGroq:
+        async def complete(self, *_args, **_kwargs):
+            return "You met Neha through a mutual friend."
+
+    monkeypatch.setattr(echo_module, "RetrievalService", KeywordRetrieval)
+    monkeypatch.setattr(echo_module, "CognitiveEngineService", FailingPlanner)
+    monkeypatch.setattr(echo_module, "GroqService", FakeGroq)
+    response = asyncio.run(conversation(
+        EchoConversationRequest(question="How did I meet my wife?"),
+        {"sub": "owner-1"}, FakeConnection(memories=1, chunks=1, indexed=0),
+    ))
+
+    assert response.text.startswith("You met Neha")
+
+
 def test_only_final_provider_unavailability_returns_503(monkeypatch):
     class FakeRetrieval:
         async def retrieve_memories(self, *_args, **_kwargs):

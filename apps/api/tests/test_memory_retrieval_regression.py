@@ -27,6 +27,15 @@ You: I enjoy gardening, fixing things, making tea, and listening to Kishore Kuma
 
 Echo: What do you hope your grandchildren remember about you?
 You: I hope they remember kindness, being present, slow walks, butterflies, tea, and listening.
+
+Echo: Why did you enjoy collecting seashells?
+You: I loved collecting seashells with my father after storms because he said every shell had its own journey.
+
+Echo: Who was Daniel?
+You: Daniel was my older brother and the person who taught me to repair bicycles.
+
+Echo: What made you love books?
+You: My mother took me to the town library every Saturday, and books made the world feel bigger.
 """.strip()
 
 
@@ -41,7 +50,7 @@ def _memory() -> MemoryFragment:
 def test_chunking_keeps_an_echo_question_with_its_answer():
     chunks = build_memory_chunks(_memory())
 
-    assert len(chunks) == 6
+    assert len(chunks) == 9
     assert "How did you meet your wife?" in chunks[0].content
     assert "mutual friend while working at a railway workshop" in chunks[0].content
     assert {chunk.category for chunk in chunks} >= {"Family", "Values", "Preferences", "Legacy"}
@@ -84,6 +93,9 @@ def test_interview_questions_retrieve_grounded_expected_evidence(monkeypatch):
         "What is your proudest moment?": "daughter became a doctor and my son started a company",
         "What hobbies do you enjoy?": "gardening, fixing things, making tea, and listening to kishore kumar songs",
         "What do you hope your grandchildren remember?": "kindness, being present, slow walks, butterflies, tea, and listening",
+        "Why did you enjoy collecting seashells?": "collecting seashells with my father after storms",
+        "Who was Daniel?": "daniel was my older brother",
+        "What made you love books?": "mother took me to the town library every saturday",
     }
     for question, expected in cases.items():
         memories = asyncio.run(RetrievalService().retrieve_memories(
