@@ -86,8 +86,8 @@ async def get_db() -> asyncpg.Connection:
     """Dependency injection function for FastAPI routes."""
     if not db_client.pool:
         raise HTTPException(
-            status_code=500,
-            detail="Memory storage is unavailable because the database connection is not configured or reachable.",
+            status_code=503,
+            detail="The database connection is temporarily unavailable. Please try again shortly.",
         )
     
     async with db_client.pool.acquire() as connection:

@@ -18,7 +18,7 @@ The API migration runner applies `apps/api/app/db/migrations/020_family_groups.s
 
 ## User flow
 
-1. New accounts choose a 3Ã¢â‚¬â€œ30 character lowercase username at signup. Existing users without a username are redirected to onboarding.
+1. New accounts choose a 3–30 character lowercase username at signup. Existing users without a username are redirected to onboarding.
 2. An owner creates a group, confirms an exact username search, and sends an invitation.
 3. The recipient accepts or declines the invitation from **Invitations**. Pending invitations expire after seven days.
 4. The owner turns on **Share my memory map** for that group. Only accepted members gain access.

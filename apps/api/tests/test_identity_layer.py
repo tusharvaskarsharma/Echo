@@ -1,9 +1,10 @@
 """Regression coverage for structured facts being kept out of semantic RAG."""
 
+import asyncio
 from datetime import date
 
 from app.services.identity_service import (
-    IdentityIntent, answer_identity_question, build_identity_context, classify_question, filter_shared_identity,
+    IdentityIntent, IdentityService, answer_identity_question, build_identity_context, classify_question, filter_shared_identity,
 )
 
 
@@ -39,3 +40,36 @@ def test_group_member_receives_only_selected_identity_fields():
     assert shared["email"] is None
     assert shared["medical_notes"] is None
     assert "private@example.test" not in build_identity_context(shared)
+
+
+class _IdentityConnection:
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    async def fetchrow(self, query: str, *_args):
+        self.queries.append(query)
+        if query.lstrip().startswith("INSERT"):
+            return {
+                "user_id": "owner-1",
+                "full_name": None,
+                "email": "owner@example.test",
+                "languages": [],
+                "children": [],
+                "parents": [],
+                "siblings": [],
+                "grandchildren": [],
+                "pets": [],
+                "values": [],
+                "social_links": {},
+                "privacy_settings": {"shared_fields": []},
+            }
+        raise AssertionError(f"Unexpected query: {query}")
+
+
+def test_new_life_profile_does_not_depend_on_the_legacy_profiles_table():
+    connection = _IdentityConnection()
+    profile = asyncio.run(IdentityService().ensure_owner_profile(connection, "owner-1", "owner@example.test"))
+
+    assert profile["user_id"] == "owner-1"
+    assert profile["email"] == "owner@example.test"
+    assert all("public.profiles" not in query for query in connection.queries)

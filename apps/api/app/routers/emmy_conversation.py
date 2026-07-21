@@ -58,7 +58,7 @@ def _casual_response(question: str) -> str | None:
     if not words or len(words) > 7:
         return None
     if any(word in {"hi", "hii", "hiii", "hiee", "hieee", "hello", "hey", "heyy"} for word in words):
-        return "Hii! Itâ€™s really nice to hear from you. Whatâ€™s on your mind?"
+        return "Hii! It’s really nice to hear from you. What’s on your mind?"
     if normalized in {"how are you", "how r you", "how are u", "whats up", "what s up"}:
         return "I'm here with you and listening. How are you feeling today?"
     if any(word in {"thanks", "thank", "thx", "thankyou"} for word in words):

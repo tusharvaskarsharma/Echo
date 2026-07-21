@@ -209,10 +209,10 @@ def answer_identity_question(question: str, profile: dict[str, Any]) -> str | No
 
 class IdentityService:
     async def ensure_owner_profile(self, conn: asyncpg.Connection, user_id: str, email: str | None = None) -> dict[str, Any]:
-        """Create a sparse owner row, seeding known account details once."""
+        """Create a sparse owner row without depending on an optional profile row."""
         row = await conn.fetchrow(
-            """INSERT INTO public.identity_profiles (user_id, full_name, email)
-               VALUES ($1, (SELECT full_name FROM public.profiles WHERE id = $1), $2)
+            """INSERT INTO public.identity_profiles (user_id, email)
+               VALUES ($1, $2)
                ON CONFLICT (user_id) DO NOTHING
                RETURNING *""",
             user_id, email,

@@ -38,6 +38,9 @@ async def get_my_identity(
     except asyncpg.PostgresError as error:
         logger.exception("Failed to load Life Profile for authenticated user")
         raise HTTPException(status_code=503, detail="Life Profile is temporarily unavailable") from error
+    except Exception as error:
+        logger.exception("Unexpected Life Profile load failure for authenticated user")
+        raise HTTPException(status_code=500, detail="Life Profile could not be loaded") from error
 
 
 @router.put("", response_model=IdentityProfileResponse)
@@ -54,6 +57,9 @@ async def update_my_identity(
     except asyncpg.PostgresError as error:
         logger.exception("Failed to save Life Profile for authenticated user")
         raise HTTPException(status_code=503, detail="Life Profile could not be saved") from error
+    except Exception as error:
+        logger.exception("Unexpected Life Profile save failure for authenticated user")
+        raise HTTPException(status_code=500, detail="Life Profile could not be saved") from error
 
 
 @router.get("/{owner_id}", response_model=IdentityProfileResponse)
@@ -73,3 +79,6 @@ async def get_shared_identity(
     except asyncpg.PostgresError as error:
         logger.exception("Failed to load a shared Life Profile")
         raise HTTPException(status_code=503, detail="Life Profile is temporarily unavailable") from error
+    except Exception as error:
+        logger.exception("Unexpected shared Life Profile load failure")
+        raise HTTPException(status_code=500, detail="Life Profile could not be loaded") from error
