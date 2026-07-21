@@ -23,6 +23,7 @@
    - [Phase 1 — Data Collection & Ingestion: The Interview Session Pipeline](#phase-1--data-collection--ingestion-the-interview-session-pipeline)
    - [Phase 2 — Backend & AI Logic: The Family Conversation Pipeline](#phase-2--backend--ai-logic-the-family-conversation-pipeline)
    - [Phase 3 — Frontend Integration: Building the UI/UX](#phase-3--frontend-integration-building-the-uiux)
+   - [GPT-5.6 & Codex Development Workflow](#41-gpt-56--codex-development-workflow)
 5. [The Hackathon Winning Edge](#5-the-hackathon-winning-edge)
    - [What Makes This Win in a 3-Minute Demo](#51-what-makes-this-win-in-a-3-minute-demo)
    - [The 3-Minute Demo Script](#52-the-3-minute-demo-script)
@@ -388,6 +389,29 @@ The family conversation page is two-pane: a conversation log on the left (showin
 **Step 4 — State Management & Real-Time Sync**
 
 The app avoids a global state manager (Redux, Zustand) to stay lean for a hackathon. Instead: Supabase Realtime subscriptions drive memory graph updates; SWR handles server state with optimistic updates for consent toggles; React Context holds session state during an active interview; and the WebSocket lifecycle is entirely encapsulated in the `useRealtimeSession` hook. This architecture means the entire data flow is observable and debuggable without DevTools plugins.
+
+---
+
+### 4.1 GPT-5.6 & Codex Development Workflow
+
+GPT-5.6 and Codex support Emmy's **engineering and quality workflow**. They are not part of the live end-user request path: production interviews, retrieval, and responses continue to use the deployed Gemini, Groq, Pinecone, FastAPI, and Supabase services.
+
+**GPT-5.6 — pipeline design and evaluation**
+
+- Helps design and review the retrieval pipeline: interview-turn preservation, story-aware chunking, embedding metadata, hybrid search, reranking, and grounded prompt construction.
+- Turns consent-approved, de-identified sample memories into proposed question-and-answer evaluation cases. These cases test whether a retrieved answer is supported by the preserved source material.
+- Helps prepare and review JSONL training-data candidates for a future provider-supported fine-tuning workflow, while keeping the final approval and all data handling under human control.
+- GPT-5.6 is **not** used to fine-tune Emmy's production data today. The current GPT-5.6 model documentation lists hosted fine-tuning as unsupported, so Emmy keeps its current retrieval-grounded persona approach rather than sending private memories to an unsupported fine-tuning job. See the [GPT-5.6 model guidance](https://developers.openai.com/api/docs/guides/latest-model) and [GPT-5.6 Sol model page](https://developers.openai.com/api/docs/models/gpt-5.6-sol).
+
+**Codex — implementation and pipeline engineering**
+
+- Maps the end-to-end flow across the Next.js frontend, FastAPI API, Supabase schema/RLS, Pinecone index, and AI services; then implements focused, reviewable changes.
+- Builds and maintains regression tests for session capture, memory processing, embedding/index writes, retrieval quality, group permissions, and privacy/consent behaviour.
+- Reviews configuration and migrations, runs static checks and tests, and helps turn expected behaviour into repeatable evaluation coverage before deployment. Codex is designed to understand codebases and build, test, and review changes, which makes it useful for this workflow. See [OpenAI Developers](https://developers.openai.com/).
+
+**Privacy guardrails**
+
+Only consent-approved data may be used for evaluation or dataset preparation. Production memory records are not exported to GPT-5.6 by default, and no code, schema, or deployment change is applied without human review. This preserves Emmy's source-grounded and consent-first design while allowing the team to continuously improve the pipeline.
 
 ---
 
