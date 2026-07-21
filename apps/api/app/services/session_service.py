@@ -5,7 +5,7 @@ import logging
 from fastapi import HTTPException
 from app.models.session import Session, SessionStatus, SessionCreate, SessionUpdate, PaginatedSessionResponse
 from app.db import repositories
-from app.workers.task_runner import run_task
+from app.workers.process_session import process_session
 from app.services.session_audio_storage_service import SessionAudioStorageService
 
 logger = logging.getLogger(__name__)
@@ -50,19 +50,14 @@ class SessionService:
         if req.status in [SessionStatus.COMPLETED, SessionStatus.CANCELLED] and session.status not in [SessionStatus.COMPLETED, SessionStatus.CANCELLED]:
             session.ended_at = datetime.now(timezone.utc)
             
-        # Trigger Celery worker if transitioning to COMPLETED
-        trigger_worker = (req.status == SessionStatus.COMPLETED and session.status != SessionStatus.COMPLETED)
+        should_process = (req.status == SessionStatus.COMPLETED and session.status != SessionStatus.COMPLETED)
             
         session.status = req.status
         updated_session = await repositories.update_session(self.conn, session, self.subject_id)
         
-        if trigger_worker:
-            try:
-                # Fire and forget
-                run_task("process_session", str(session.id))
-                logger.info(f"Triggered process_session for session {session.id}")
-            except Exception as e:
-                logger.error(f"Failed to trigger process_session: {e}")
+        if should_process:
+            await process_session(str(session.id))
+            logger.info(f"Completed process_session for session {session.id}")
                 
         return updated_session
 

@@ -1,12 +1,10 @@
 """Index a single already-persisted memory without requiring direct Postgres access."""
 
-import asyncio
-from celery.utils.log import get_task_logger
+import logging
 
 from app.models.memory import MemoryFragment
-from app.workers.celery_app import celery_app
 
-logger = get_task_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 async def _index_memory_async(memory_payload: dict, user_id: str) -> None:
@@ -47,15 +45,5 @@ async def _index_memory_async(memory_payload: dict, user_id: str) -> None:
     logger.info("Indexed memory %s in Pinecone namespace %s", memory.id, memory.subject_id)
 
 
-@celery_app.task(bind=True, max_retries=2, name="index_memory")
-def index_memory(self, memory_payload: dict, user_id: str):
-    try:
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        loop.run_until_complete(_index_memory_async(memory_payload, user_id))
-    except Exception as error:
-        logger.exception("Failed to index memory in Pinecone")
-        raise self.retry(exc=error, countdown=2)
+async def index_memory(memory_payload: dict, user_id: str) -> None:
+    await _index_memory_async(memory_payload, user_id)

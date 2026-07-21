@@ -7,10 +7,3 @@ startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/health"
 healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"
-
-## Deploy this configuration to the Railway web service.  Create a separate
-## Railway service for Celery and point its config path at railway.worker.toml.
-builder = "NIXPACKS"
-buildCommand = "pip install -e ."
-[services.deploy]
-startCommand = "celery -A app.workers.celery_app:celery_app worker -l info"

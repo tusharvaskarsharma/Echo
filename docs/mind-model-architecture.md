@@ -72,7 +72,7 @@ All Mind Model tables carry `user_id`, `created_at`, and `updated_at`. RLS restr
 3. **Superseded:** a newer, better supported timeline observation replaces its current interpretation; old evidence is retained.
 4. **Revoked:** subject consent is withdrawn or a subject removes the trait. It cannot be retrieved or generated from.
 
-No worker may promote a trait solely because an LLM generated a plausible statement. Promotion requires source evidence and deterministic confidence policy.
+No processing step may promote a trait solely because an LLM generated a plausible statement. Promotion requires source evidence and deterministic confidence policy.
 
 ## Continuous learning pipeline
 
@@ -80,7 +80,7 @@ No worker may promote a trait solely because an LLM generated a plausible statem
 sequenceDiagram
   participant S as Subject
   participant L as Live interview
-  participant W as Post-session worker
+  participant P as Post-session processing
   participant DB as Supabase
   participant PC as Pinecone
   S->>L: Answers narrative and cognitive prompts
@@ -94,9 +94,9 @@ sequenceDiagram
   DB-->>S: Optional review queue for low-confidence candidates
 ```
 
-### Worker responsibilities
+### Processing responsibilities
 
-`process_session` remains responsible for the existing transcript, memory extraction, embedding, and persona-data flow. It publishes `memory.extracted` events after reviewed fragments are stored. New workers consume those events:
+`process_session` remains responsible for the existing transcript, memory extraction, embedding, and persona-data flow. It performs the following processing steps after reviewed fragments are stored:
 
 - `extract_mind_observations`: asks the configured Groq structured-output model for **candidate** claims only. JSON schema requires domain, claim, supporting excerpt, source memory id, temporal context, and a model-estimated confidence.
 - `link_mind_evidence`: rejects claims that cannot be linked to a consent-eligible memory/session or whose excerpt is not entailed by the source.
@@ -104,7 +104,7 @@ sequenceDiagram
 - `build_personality_timeline`: writes a snapshot when an active trait changes materially across dated evidence.
 - `refresh_mind_summary`: creates a compact summary from active traits only; it never becomes the sole evidence source.
 
-Each worker is idempotent using `(mind_profile_id, source_memory_id, extraction_version)` as its logical dedupe key. Jobs must record model, prompt, extraction version, latency, and failure reason in `processing_jobs`/observability, but must not log raw private transcript contents outside the approved data boundary.
+Each processing step is idempotent using `(mind_profile_id, source_memory_id, extraction_version)` as its logical dedupe key. Processing must record model, prompt, extraction version, latency, and failure reason in `processing_jobs`/observability, but must not log raw private transcript contents outside the approved data boundary.
 
 ## Confidence engine
 

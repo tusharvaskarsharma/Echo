@@ -162,7 +162,7 @@ apps/api/app/services/
   legacy_score.py            # Digital Mind Completion snapshots
 ```
 
-Worker sequence after reviewed memory creation:
+Processing sequence after reviewed memory creation:
 
 ```text
 memory.extracted
@@ -173,7 +173,7 @@ memory.extracted
   -> generate/re-rank interview recommendations
 ```
 
-Workers must be idempotent by source memory/version. A memory consent change, deletion, domain suppression, or subject skip triggers score/recommendation recomputation. Recommendations are never sent through email/push unless the subject separately opted in.
+Processing must be idempotent by source memory/version. A memory consent change, deletion, domain suppression, or subject skip triggers score/recommendation recomputation. Recommendations are never sent through email/push unless the subject separately opted in.
 
 ## Database design
 

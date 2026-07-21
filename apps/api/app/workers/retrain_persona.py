@@ -1,5 +1,3 @@
-from app.workers.celery_app import celery_app
-import asyncio
 from app.db.client import get_db
 from app.services.finetune_builder import FinetuneBuilderService
 
@@ -19,6 +17,5 @@ async def _retrain_persona_async(subject_id: str):
         break
 
 
-@celery_app.task(name="retrain_persona")
-def retrain_persona_task(subject_id: str):
-    asyncio.run(_retrain_persona_async(subject_id))
+async def retrain_persona(subject_id: str) -> None:
+    await _retrain_persona_async(subject_id)

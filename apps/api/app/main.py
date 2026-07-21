@@ -46,19 +46,6 @@ async def health_db():
     except Exception as e:
         return {"ok": False, "status": str(e)}
 
-@app.get("/health/redis")
-def health_redis():
-    if settings.development_mode:
-        return {"ok": True, "status": "development mode, redis bypassed"}
-    import redis
-    import os
-    try:
-        r = redis.Redis.from_url(os.getenv("REDIS_URL", settings.redis_url))
-        r.ping()
-        return {"ok": True, "status": "connected"}
-    except Exception as e:
-        return {"ok": False, "status": str(e)}
-
 @app.get("/health/providers")
 def health_providers():
     """Reports provider configuration without disclosing credentials."""

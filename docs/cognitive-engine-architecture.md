@@ -149,10 +149,10 @@ apps/api/app/services/
   confidence_service.py      # Deterministic scoring and uncertainty gate
 ```
 
-Supporting worker additions:
+Supporting synchronous processing additions:
 
 ```text
-workers/
+processing/
   derive_decision_policies.py       # Promotes supported reusable policies
   build_life_timeline.py            # Extracts dated events from reviewed memories
   recompute_cognitive_confidence.py # Re-evaluates after evidence/consent changes

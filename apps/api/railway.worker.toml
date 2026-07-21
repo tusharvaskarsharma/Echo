@@ -1,7 +1,0 @@
-[build]
-builder = "NIXPACKS"
-buildCommand = "pip install -e ."
-
-[deploy]
-startCommand = "celery -A app.workers.celery_app:celery_app worker -l info"
-restartPolicyType = "ON_FAILURE"

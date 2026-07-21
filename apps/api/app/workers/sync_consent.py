@@ -1,13 +1,11 @@
 """Synchronise a durable memory-consent change to Pinecone metadata."""
 
-import asyncio
-from celery.utils.log import get_task_logger
+import logging
 
 from app.db import repositories
 from app.db.client import db_client
-from app.workers.celery_app import celery_app
 
-logger = get_task_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 async def _sync_memory_consent_async(memory_id: str, user_id: str) -> None:
@@ -37,16 +35,5 @@ async def _sync_memory_consent_async(memory_id: str, user_id: str) -> None:
     logger.info("Pinecone consent metadata synchronized for memory %s", memory_id)
 
 
-@celery_app.task(bind=True, max_retries=2, name="sync_memory_consent")
-def sync_memory_consent(self, memory_id: str, user_id: str):
-    """Retry short-lived provider failures without delaying the PATCH response."""
-    try:
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        loop.run_until_complete(_sync_memory_consent_async(memory_id, user_id))
-    except Exception as error:
-        logger.exception("Pinecone consent sync failed for memory %s", memory_id)
-        raise self.retry(exc=error, countdown=2)
+async def sync_memory_consent(memory_id: str, user_id: str) -> None:
+    await _sync_memory_consent_async(memory_id, user_id)

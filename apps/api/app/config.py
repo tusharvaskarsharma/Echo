@@ -27,8 +27,6 @@ class Settings(BaseSettings):
     pinecone_index: str
     pinecone_index_name: str = "echo-memories"
     pinecone_environment: str = "us-east-1"
-    redis_url: str = "redis://localhost:6379/0"
-
     @property
     def missing_live_integrations(self) -> list[str]:
         required = {

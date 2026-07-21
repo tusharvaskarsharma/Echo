@@ -11,7 +11,8 @@ from uuid import uuid4
 from app.services.memory_storage_service import MemoryStorageService
 from app.models.session import SessionCreate, SessionStatus, SessionUpdate
 from app.services.session_service import SessionService
-from app.workers.task_runner import run_task
+from app.workers.index_memory import index_memory
+from app.workers.sync_consent import sync_memory_consent
 
 router = APIRouter(
     prefix='/memories', 
@@ -20,6 +21,10 @@ router = APIRouter(
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def _index_memory(memory: MemoryFragment, user_id: str) -> None:
+    await index_memory(memory.model_dump(mode="json"), user_id)
 
 
 async def _import_fallback_memories(
@@ -61,7 +66,7 @@ async def _import_fallback_memories(
                 update={"session_id": session.id, "subject_id": user_id}
             )
             saved = await repositories.create_memory(conn, imported, user_id)
-            run_task("index_memory", saved.model_dump(mode="json"), user_id)
+            await _index_memory(saved, user_id)
             logger.info("Imported fallback memory %s for user %s", saved.id, user_id)
         except Exception:
             # Continue with other records; re-running the list endpoint safely
@@ -78,7 +83,7 @@ async def save_conversation_memory(
     user_id = str(user["sub"])
     if conn is None:
         saved = await MemoryStorageService().save_conversation(user_id, conversation.content)
-        run_task("index_memory", saved.model_dump(mode="json"), user_id)
+        await _index_memory(saved, user_id)
         return saved
 
     service = SessionService(conn, user_id, user.get("email"))
@@ -89,7 +94,7 @@ async def save_conversation_memory(
         people_mentioned=[], consent_level=ConsentLevel.PRIVATE, confidence_score=0.7,
     )
     saved = await repositories.create_memory(conn, memory, user_id)
-    run_task("index_memory", saved.model_dump(mode="json"), user_id)
+    await _index_memory(saved, user_id)
     await service.update_session(str(session.id), SessionUpdate(status=SessionStatus.COMPLETED))
     return saved
 
@@ -109,7 +114,7 @@ async def create_draft_memory(
         confidence_score=0.7,
     )
     saved = await repositories.create_memory(conn, memory, user["sub"])
-    run_task("index_memory", saved.model_dump(mode="json"), str(user["sub"]))
+    await _index_memory(saved, str(user["sub"]))
     return saved
 
 @router.get("", response_model=List[MemoryFragment])
@@ -120,11 +125,6 @@ async def list_memories(
     if conn is None:
         user_id = str(user["sub"])
         memories = await MemoryStorageService().list_memories(user_id)
-        # Backfill records created while direct PostgreSQL was unavailable.
-        # Pinecone upserts are idempotent, so repeat reads cannot duplicate a
-        # vector and the response stays independent of provider latency.
-        for memory in memories:
-            run_task("index_memory", memory.model_dump(mode="json"), user_id)
         return memories
     # Import records saved while the old database connection was unavailable.
     # This is safe on every request because imports preserve memory IDs and the
@@ -145,9 +145,7 @@ async def update_memory_consent(
     if conn is None:
         try:
             updated = await MemoryStorageService().update_consent(str(subject_id), memory_id, patch.consent_level)
-            # Re-upsert the same vector id so fallback storage changes reach
-            # Pinecone even without a direct PostgreSQL connection.
-            run_task("index_memory", updated.model_dump(mode="json"), str(subject_id))
+            await _index_memory(updated, str(subject_id))
             return updated
         except ValueError as error:
             raise HTTPException(status_code=404, detail="Memory not found") from error
@@ -161,15 +159,6 @@ async def update_memory_consent(
         # The row could have been deleted after the owned read above.
         raise HTTPException(status_code=404, detail="Memory not found")
     
-    # PostgreSQL is now authoritative and the HTTP response is intentionally
-    # not coupled to Pinecone availability. The worker re-reads this owned row
-    # before updating the matching vector's consent metadata.
-    try:
-        run_task("sync_memory_consent", str(updated.id), str(subject_id))
-    except Exception:
-        # A broker outage must not lie about the durable privacy change. The
-        # error is logged by the task dispatcher; a queue monitor can retry it.
-        import logging
-        logging.getLogger(__name__).exception("Unable to dispatch Pinecone consent synchronization")
+    await sync_memory_consent(str(updated.id), str(subject_id))
 
     return updated

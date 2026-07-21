@@ -1,16 +1,13 @@
-import asyncio
+import logging
 from uuid import uuid4
 from datetime import datetime, timezone
-from celery.utils.log import get_task_logger
-
-from app.workers.celery_app import celery_app
 from app.db.client import db_client
 from app.db import repositories
 from app.services.transcription_service import TranscriptionService
 from app.services.memory_extractor import MemoryExtractorService
 from app.models.memory import MemoryFragment
 
-logger = get_task_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _reconcile_extracted_memories(extracted_memories):
@@ -154,29 +151,11 @@ async def _process_session_async(session_id: str):
         
     # 6. Trigger Persona Retraining Check
     try:
-        from app.workers.task_runner import run_task
-        run_task("retrain_persona", str(subject_id))
-        logger.info(f"Triggered retrain_persona check for subject {subject_id}")
+        from app.workers.retrain_persona import retrain_persona
+        await retrain_persona(str(subject_id))
+        logger.info(f"Completed retrain_persona check for subject {subject_id}")
     except Exception as e:
-        logger.error(f"Failed to trigger retraining: {e}")
+        logger.error(f"Failed to retrain persona: {e}")
 
-@celery_app.task(bind=True, max_retries=3, name="process_session")
-def process_session(self, session_id: str):
-    """Celery entry point for the durable post-session processing pipeline."""
-    try:
-        # Create a new event loop for this thread if one doesn't exist
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-        loop.run_until_complete(_process_session_async(session_id))
-    except Exception as exc:
-        logger.error(f"Error processing session {session_id}: {exc}")
-        raise self.retry(exc=exc, countdown=60)
-
-
-# Keep imports from older deployments working while the production dispatcher
-# uses the clear `process_session.delay(session_id)` API.
-process_session_task = process_session
+async def process_session(session_id: str) -> None:
+    await _process_session_async(session_id)

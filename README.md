@@ -3,7 +3,7 @@
 > *An AI-powered living legacy system that preserves how a person thinks, speaks, and loves — so the people who matter most never lose them.*
 
 **Hackathon:** OpenAI Hackathon (Devpost)
-**Stack:** Gemini Live Audio · Groq persona generation · Next.js 14 · FastAPI · Supabase · Pinecone · Redis · librosa · CREPE Pitch Tracking · ElevenLabs Voice Clone · Acoustic Fingerprint Engine
+**Stack:** Gemini Live Audio · Groq persona generation · Next.js 14 · FastAPI · Supabase · Pinecone · librosa · CREPE Pitch Tracking · ElevenLabs Voice Clone · Acoustic Fingerprint Engine
 
 ---
 
@@ -119,7 +119,7 @@ Echo is composed of seven principal layers:
 - **Cognitive Engine layer** — an intent-aware, relationship- and time-sensitive answer-planning layer that creates a bounded evidence ledger before persona generation. It never stores or exposes chain-of-thought.
 - **Autonomous Life Interview Engine** — a voluntary, coverage-aware long-horizon planner that identifies unexplored domains, recommends respectful follow-ups, tracks uncertainty, and keeps the subject in control.
 
-Redis handles session state and job queuing. All infrastructure is containerized and deployable on Railway or Fly.io within a hackathon window.
+FastAPI performs session processing, memory indexing, and persona updates directly within the request lifecycle. All infrastructure is deployable on Railway or Fly.io within a hackathon window.
 
 ---
 
@@ -132,7 +132,7 @@ Redis handles session state and job queuing. All infrastructure is containerized
 | UI Components | shadcn/ui + Tailwind CSS | shadcn's copy-paste model means zero install overhead for accessible components (dialogs, toasts, sliders). Tailwind prevents style conflicts. The unstyled foundation allows the warm, human aesthetic Echo requires. |
 | Real-time Audio | Gemini Live API + WebSocket | The browser streams 16 kHz PCM and receives native audio through Gemini Live. FastAPI mints a constrained, one-use ephemeral token; the Gemini API key never reaches the browser. |
 | Backend Framework | FastAPI (Python 3.12) | FastAPI owns provider credentials, Supabase JWT validation, and the provider-neutral memory pipeline while keeping long-lived keys server-side. |
-| Task Queue | Celery + Redis | Post-session processing (transcription cleanup, memory graph construction, embedding generation, fine-tune job submission) is asynchronous and long-running. Celery with Redis as broker handles this without blocking the API. Redis also stores ephemeral session state. |
+| Processing | FastAPI request lifecycle | Post-session processing (transcription cleanup, memory graph construction, embedding generation, fine-tune job submission) completes before the API response is returned. |
 | Primary Database | PostgreSQL via Supabase | Supabase provides row-level security (RLS) out of the box — essential for Echo's consent architecture where subjects control exactly which rows are accessible to which family members. Realtime subscriptions enable live UI updates during session processing. |
 | Vector Database | Pinecone (Serverless) | Memory retrieval during family conversations requires semantic search across hundreds of memory fragments. Pinecone's serverless tier eliminates index management overhead and provides <50ms p99 query latency. Metadata filtering enables consent-aware retrieval by access level. |
 | File Storage | Supabase Storage (S3-compatible) | Audio recordings and processed transcripts are large binary objects. Supabase Storage integrates with RLS policies, so storage access inherits the same consent rules as database rows without duplicate permission logic. |
@@ -142,7 +142,7 @@ Redis handles session state and job queuing. All infrastructure is containerized
 | Memory Extraction | Groq transcription + structured Llama output | Groq transcribes uploads with `whisper-large-v3-turbo`; Groq Llama returns JSON memory fragments with emotion tags, people, timestamps, and confidence. |
 | Embeddings | Gemini `gemini-embedding-001` | The embedding service requests 3072 dimensions so the existing Pinecone index contract remains intact. |
 | Auth | Supabase Auth (email/password + Google/GitHub OAuth) | Verified-email signup, password reset, OAuth callback exchange, browser-session refresh, and FastAPI JWT validation. JWTs flow through Supabase RLS and FastAPI middleware. |
-| Deployment | Railway (backend + workers) + Vercel (frontend) | Railway supports persistent WebSocket connections and Celery workers without container orchestration overhead. Vercel's Edge Network provides optimal latency for the Next.js frontend. Both support one-command deploys from GitHub — critical for hackathon iteration speed. |
+| Deployment | Railway (backend) + Vercel (frontend) | Railway hosts the FastAPI API and persistent WebSocket connections without a separate processing service. Vercel's Edge Network provides optimal latency for the Next.js frontend. Both support one-command deploys from GitHub — critical for hackathon iteration speed. |
 | Observability | Langfuse | Langfuse traces every LLM call with input/output logging, latency, cost tracking, and session-level grouping. Essential for debugging prompt failures during a live hackathon demo under pressure. |
 
 ---
@@ -154,7 +154,7 @@ Redis handles session state and job queuing. All infrastructure is containerized
 ```
 echo/                                    # Monorepo root
 ├── .env.example                         # All required env vars documented
-├── docker-compose.yml                   # Local: postgres, redis, pgadmin
+├── docker-compose.yml                   # Local: postgres and pgadmin
 ├── turbo.json                           # Turborepo pipeline config
 ├── package.json                         # Workspace root — no direct deps
 │
@@ -222,7 +222,7 @@ echo/                                    # Monorepo root
 │   │       └── api.ts                   # Typed FastAPI client (from openapi-typescript)
 │   │
 │   └── api/                             # FastAPI backend
-│       ├── pyproject.toml               # FastAPI, Celery, Supabase, Pinecone, and provider-neutral HTTP deps
+│       ├── pyproject.toml               # FastAPI, Supabase, Pinecone, and provider-neutral HTTP deps
 │       ├── Dockerfile                   # Multi-stage: builder (uv install) → runtime
 │       │
 │       ├── app/
@@ -242,9 +242,8 @@ echo/                                    # Monorepo root
 │       │   │   ├── persona_service.py   # Query fine-tuned model + build response
 │       │   │   └── finetune_builder.py  # Construct JSONL training file from memory graph
 │       │   │
-│       │   ├── workers/                 # Celery tasks
-│       │   │   ├── celery_app.py        # Celery instance + Redis broker config
-│       │   │   ├── process_session.py   # Full post-session pipeline task
+│       │   ├── workers/                 # Synchronous processing modules
+│       │   │   ├── process_session.py   # Full post-session pipeline
 │       │   │   └── retrain_persona.py   # Incremental fine-tune after new sessions
 │       │   │
 │       │   ├── models/                  # Pydantic schemas (request/response + DB)
@@ -287,7 +286,7 @@ After a session, Groq's transcription endpoint produces a raw transcript. `memor
 
 #### `006_rls_policies.sql` — The Consent Enforcement Layer
 
-Row-Level Security policies are the technical backbone of consent. The `memories` table has policies ensuring: subjects can read/write all their own rows; family members can only SELECT rows where `consent_level != 'private'` AND their `user_id` appears in the `legacy_contacts` table for that subject; service role bypasses RLS for worker processes. This means even if an API bug existed, the database itself would refuse to return unauthorized memories.
+Row-Level Security policies are the technical backbone of consent. The `memories` table has policies ensuring: subjects can read/write all their own rows; family members can only SELECT rows where `consent_level != 'private'` AND their `user_id` appears in the `legacy_contacts` table for that subject; the server-side service role bypasses RLS only for controlled backend processing. This means even if an API bug existed, the database itself would refuse to return unauthorized memories.
 
 ---
 
@@ -317,11 +316,11 @@ Typed session notes and post-session uploads are associated with the current Sup
 
 **Step 5 — Session End & Post-Processing Trigger**
 
-When the subject ends the session, the frontend sends `PATCH /sessions/{id}` with `status='completed'`. FastAPI triggers the Celery task `process_session.delay(session_id)` and returns immediately. The subject sees a "Your session is being processed — usually takes 3–5 minutes" screen. The Celery worker then executes the full processing pipeline.
+When the subject ends the session, the frontend sends `PATCH /sessions/{id}` with `status='completed'`. FastAPI runs `process_session(session_id)` before returning the completed response, so transcript processing and memory persistence do not rely on a separate service.
 
-**Step 6 — Celery Worker: Transcript Cleanup & Deep Memory Extraction**
+**Step 6 — Transcript Cleanup & Deep Memory Extraction**
 
-The worker fetches raw audio from Supabase Storage and sends it to Groq's transcription endpoint using `whisper-large-v3-turbo`. It then submits the transcript to `memory_extractor.py`, which uses the configured Groq model in JSON mode and validates the result against the `MemoryFragment` schema.
+The FastAPI request fetches raw audio from Supabase Storage and sends it to Groq's transcription endpoint using `whisper-large-v3-turbo`. It then submits the transcript to `memory_extractor.py`, which uses the configured Groq model in JSON mode and validates the result against the `MemoryFragment` schema.
 
 **Step 7 — Embedding & Pinecone Upsert**
 
@@ -535,8 +534,8 @@ apps/api/app/
 │   ├── voice_clone_service.py     # ElevenLabs Pro Clone: train, store voice_id, synthesise
 │   └── emotion_tts_mapper.py      # Map emotion tags → ElevenLabs stability/style params
 │
-├── workers/
-│   └── build_voice_profile.py     # Celery task: runs after each session, updates fingerprint
+├── services/
+│   └── build_voice_profile.py     # Runs during session processing and updates the fingerprint
 │
 └── db/migrations/
     ├── 007_voice_profiles.sql     # mfcc_vector, f0_mean, f0_std, speech_rate, pause_duration
@@ -556,7 +555,7 @@ apps/web/components/
 | Layer | Technology | Specific Reason for Choice |
 |-------|------------|---------------------------|
 | Diarization | Pyannote Audio 3.1 | State-of-the-art speaker diarization in Python. Pre-trained on thousands of hours of conversational audio. Accurately separates the subject's voice from the AI's TTS output even when voices overlap. Available via Hugging Face Hub with a one-time licence acceptance. |
-| Spectral Analysis | librosa 0.10 | The canonical Python audio analysis library. Provides MFCC extraction, spectral centroid, zero-crossing rate, RMS energy, and harmonic-percussive separation in a single `pip install`. No GPU required — runs efficiently on CPU workers for post-session processing. |
+| Spectral Analysis | librosa 0.10 | The canonical Python audio analysis library. Provides MFCC extraction, spectral centroid, zero-crossing rate, RMS energy, and harmonic-percussive separation in a single `pip install`. No GPU required — runs efficiently on the backend during post-session processing. |
 | Pitch Tracking | CREPE (TensorFlow) | CREPE outperforms classical pitch trackers (YIN, PYIN) on real-world speech by ~30% in voiced/unvoiced accuracy. Its confidence output enables the system to discard unreliable pitch frames (whispers, glottalization) and build a cleaner F0 profile. Available as `pip install crepe`. |
 | Phase 2 Voice Clone | ElevenLabs Professional Voice Clone API | The only commercially available voice clone that captures prosodic texture (not just spectral shape) from 30+ minutes of audio. The Professional tier trains a speaker-adaptive model rather than just conditioning on a 3-second prompt, resulting in significantly more natural long-form speech. Voice ID is persistent and reusable across all future synthesis calls. |
 | Phase 3 Neural TTS | VALL-E / VoiceBox (Meta, open weights) | VALL-E's neural codec language model architecture enables conditioning on arbitrary acoustic prompts plus learned speaker embeddings. In Phase 3, the acoustic fingerprint vector replaces the 3-second prompt, enabling synthesis from accumulated statistical knowledge rather than a single audio clip. Requires GPU inference (A10G minimum) but eliminates all third-party API dependency. |
@@ -593,14 +592,13 @@ This makes it structurally impossible to store a voice ID without a consent time
 Echo is designed to be deployed with zero code changes using Railway for the backend and Vercel for the frontend.
 
 ### 7.1 Backend (Railway)
-The FastAPI backend and Celery workers are containerised using Nixpacks.
+The FastAPI backend is containerised using Nixpacks.
 1. Connect your GitHub repository to Railway.
-2. Create an API Web service with `apps/api/railway.toml`. Create a second Worker service from the same `apps/api` root and set its Railway config path to `railway.worker.toml`; Railway runs one process per service.
+2. Create one API Web service with `apps/api/railway.toml`.
 3. Configure the following environment variables in Railway:
    - `GEMINI_API_KEY`, `GROQ_API_KEY`, `PINECONE_API_KEY`, `PINECONE_INDEX`
    - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`
    - `DATABASE_URL` (Auto-provisioned if using Railway PostgreSQL, or use Supabase pooling URL)
-   - `REDIS_URL` (Auto-provisioned if using Railway Redis)
    - `DEVELOPMENT_MODE=false`
    - `CORS_ORIGINS` (set this to the exact Vercel browser origin, with no path; for the current deployment: `https://echo-web-mocha.vercel.app`). Multiple approved origins can be comma-separated. Do not use `*`, because authenticated requests require credentialed CORS.
 4. Migrations will automatically run on startup via the configured `startCommand` in `railway.toml`.
