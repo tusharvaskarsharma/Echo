@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from uuid import uuid4
 
 from app.routers.groups import list_groups, list_invitations, shared_users
 from app.routers.profile import PrivacyUpdate, get_privacy, update_privacy
@@ -27,9 +28,27 @@ def test_new_account_family_endpoints_return_empty_collections() -> None:
     assert asyncio.run(list_invitations(user, conn)) == []
     assert asyncio.run(shared_users(user, conn)) == []
 
-    shared_users_query = next(query for query in conn.queries if "SELECT DISTINCT owner.id" in query)
+    shared_users_query = next(query for query in conn.queries if "SELECT member.user_id AS owner_id" in query)
     assert "ORDER BY owner.full_name NULLS LAST, owner.username NULLS LAST" in shared_users_query
-    assert "lower(COALESCE" not in shared_users_query
+    assert "member.user_id <> $1::uuid" in shared_users_query
+    assert "BOOL_OR(permission.memory_owner_id IS NOT NULL) AS can_access" in shared_users_query
+
+
+class SharedMemberConnection:
+    async def fetch(self, _query: str, *_args) -> list[dict]:
+        return [{
+            "owner_id": uuid4(), "subject_id": None, "username": "alex",
+            "full_name": "Alex Kumar", "can_access": False, "group_names": ["My Love"],
+        }]
+
+
+def test_shared_users_lists_accepted_members_without_granting_their_archive() -> None:
+    user = {"sub": "00000000-0000-0000-0000-000000000001"}
+    users = asyncio.run(shared_users(user, SharedMemberConnection()))
+
+    assert users[0]["display_name"] == "Alex Kumar"
+    assert users[0]["group_names"] == ["My Love"]
+    assert users[0]["can_access"] is False
 
 
 class PrivacyConnection:

@@ -457,7 +457,8 @@ async def update_group_sharing(
     if payload.share_memories:
         await conn.execute(
             """INSERT INTO public.memory_permissions (memory_owner_id, group_id)
-               VALUES ($1, $2) ON CONFLICT (memory_owner_id, group_id) DO NOTHING""",
+               VALUES ($1, $2)
+               ON CONFLICT (memory_owner_id, group_id) DO NOTHING""",
             caller_id, group_id,
         )
     else:
@@ -569,19 +570,30 @@ async def shared_users(
     user: Annotated[dict, Depends(get_current_user)],
     conn: Annotated[asyncpg.Connection, Depends(get_db)],
 ) -> list[dict]:
-    """Return each distinct owner whose memory map the caller may access."""
+    """List accepted group members and whether their archive is selectable.
+
+    A name is visible to fellow accepted members, while a missing permission
+    keeps that person's archive disabled until they choose to share it. This
+    avoids confusing an empty dropdown with an unaccepted invitation without
+    granting access merely by listing a name.
+    """
     try:
         rows = await conn.fetch(
-            """SELECT DISTINCT owner.id AS owner_id, owner.username, owner.full_name,
-                      subject.id AS subject_id
-               FROM public.memory_permissions mp
-               JOIN public.group_members gm ON gm.group_id = mp.group_id
-               JOIN public.profiles owner ON owner.id = mp.memory_owner_id
+            """SELECT member.user_id AS owner_id, owner.username, owner.full_name,
+                      subject.id AS subject_id,
+                      BOOL_OR(permission.memory_owner_id IS NOT NULL) AS can_access,
+                      array_agg(DISTINCT groups.name ORDER BY groups.name) AS group_names
+               FROM public.group_members AS caller_members
+               JOIN public.groups AS groups ON groups.id = caller_members.group_id
+               JOIN public.group_members AS member ON member.group_id = groups.id
+               LEFT JOIN public.profiles AS owner ON owner.id = member.user_id
+               LEFT JOIN public.memory_permissions AS permission
+                 ON permission.group_id = groups.id AND permission.memory_owner_id = member.user_id
                LEFT JOIN LATERAL (
-                 SELECT id FROM public.subjects WHERE user_id = mp.memory_owner_id ORDER BY created_at ASC LIMIT 1
+                 SELECT id FROM public.subjects WHERE user_id = member.user_id ORDER BY created_at ASC LIMIT 1
                ) subject ON true
-               WHERE gm.user_id = $1 AND mp.memory_owner_id <> $1
-               -- DISTINCT may only sort by selected expressions in PostgreSQL.
+               WHERE caller_members.user_id = $1 AND member.user_id <> $1::uuid
+               GROUP BY member.user_id, owner.username, owner.full_name, subject.id
                ORDER BY owner.full_name NULLS LAST, owner.username NULLS LAST""",
             str(user["sub"]),
         )
@@ -590,7 +602,8 @@ async def shared_users(
         raise HTTPException(status_code=503, detail="Shared users are temporarily unavailable") from error
     return [{
         "owner_id": str(row["owner_id"]), "subject_id": str(row["subject_id"]) if row["subject_id"] else None,
-        "username": row["username"], "display_name": row["full_name"] or row["username"] or "Shared Emmy",
+        "username": row["username"], "display_name": row["full_name"] or row["username"] or "Member",
+        "can_access": bool(row["can_access"]), "group_names": list(row["group_names"] or []),
     } for row in rows]
 
 

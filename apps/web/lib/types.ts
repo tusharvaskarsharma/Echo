@@ -82,6 +82,8 @@ export type SharedUser = {
   subject_id: string | null;
   username: string | null;
   display_name: string;
+  can_access: boolean;
+  group_names: string[];
 };
 
 export type IdentityPrivacySettings = {
