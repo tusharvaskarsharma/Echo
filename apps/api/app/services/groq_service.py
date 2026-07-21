@@ -6,12 +6,19 @@ from pathlib import Path
 from typing import AsyncIterator
 
 import httpx
-from fastapi import HTTPException
 
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 GROQ_API_BASE = "https://api.groq.com/openai/v1"
+
+
+class GroqUnavailableError(RuntimeError):
+    """A transient provider failure: timeout, rate limit, or 5xx response."""
+
+
+class GroqConfigurationError(RuntimeError):
+    """A local credential/model/request configuration problem."""
 
 
 class GroqService:
@@ -21,7 +28,17 @@ class GroqService:
 
     def _require_api_key(self) -> None:
         if not self.settings.groq_api_key:
-            raise HTTPException(status_code=503, detail="GROQ_API_KEY is not configured")
+            raise GroqConfigurationError("GROQ_API_KEY is not configured")
+
+    @staticmethod
+    def _classify_http_error(error: httpx.HTTPStatusError) -> RuntimeError:
+        status = error.response.status_code
+        # Do not log prompts or headers: both can contain private memories or
+        # credentials. The provider's status/body are enough for diagnosis.
+        logger.error("Groq request failed with HTTP %s: %s", status, error.response.text[:500])
+        if status in {408, 429} or status >= 500:
+            return GroqUnavailableError(f"Groq returned HTTP {status}")
+        return GroqConfigurationError(f"Groq rejected the request with HTTP {status}")
 
     async def complete(self, messages: list[dict], *, json_mode: bool = False) -> str:
         self._require_api_key()
@@ -32,10 +49,21 @@ class GroqService:
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(f"{GROQ_API_BASE}/chat/completions", headers={**self.headers, "Content-Type": "application/json"}, json=payload)
-            response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"] or ""
+        logger.info("Calling Groq completion model=%s json_mode=%s messages=%d", payload["model"], json_mode, len(messages))
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(f"{GROQ_API_BASE}/chat/completions", headers={**self.headers, "Content-Type": "application/json"}, json=payload)
+                response.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            raise self._classify_http_error(error) from error
+        except httpx.RequestError as error:
+            logger.exception("Groq completion request failed")
+            raise GroqUnavailableError("Groq completion request could not be completed") from error
+        try:
+            return response.json()["choices"][0]["message"]["content"] or ""
+        except (ValueError, KeyError, IndexError, TypeError) as error:
+            logger.exception("Groq completion response had an unexpected shape")
+            raise GroqUnavailableError("Groq returned an invalid completion response") from error
 
     async def stream_chat(self, messages: list[dict]) -> AsyncIterator[str]:
         self._require_api_key()

@@ -56,6 +56,9 @@ export const api = {
     const memories = await request("/memories");
     return normalizeMemories(memories);
   },
+  deleteAllMemories: (confirmation: string): Promise<{ message: string; deleted: { memories: number; chunks: number; sessions: number } }> => request("/memories/all", {
+    method: "DELETE", body: JSON.stringify({ confirmation }),
+  }),
 
   groups: (): Promise<FamilyGroup[]> => request("/groups"),
   createGroup: (name: string, description?: string): Promise<{ id: string; name: string }> => request("/groups", {

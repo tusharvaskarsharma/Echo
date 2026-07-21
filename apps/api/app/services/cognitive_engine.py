@@ -1,10 +1,13 @@
 """Evidence-only planning layer that never produces the final persona response."""
 
 import json
+import logging
 from typing import Any
 
 from app.models.cognitive import CognitiveReasoningPlan
 from app.services.groq_service import GroqService
+
+logger = logging.getLogger(__name__)
 
 
 class CognitiveEngineService:
@@ -30,6 +33,10 @@ Every required_memories entry and citation must be an exact retrieved memory ID.
 The persona prompt must say to never reveal internal reasoning and to admit uncertainty. Return exactly these keys:
 intent, question_type, required_memories, required_traits, missing_information, confidence, reasoning_plan, response_constraints, citations, system_prompt_for_persona_model.
 
+Use JSON objects—not strings or arrays—for both `reasoning_plan` and `response_constraints`.
+`reasoning_plan` must include an `answer_strategy` string. `response_constraints` must include boolean
+`should_answer`, `should_refuse`, `needs_more_context`, plus a `reason` string.
+
 User question: {question}
 Retrieved memories: {json.dumps(retrieved_memories, ensure_ascii=False)}
 Mind Model: {json.dumps(mind_model or {}, ensure_ascii=False)}
@@ -37,10 +44,18 @@ Relationship context: {json.dumps(relationship_context or {}, ensure_ascii=False
 Timeline context: {json.dumps(timeline_context or [], ensure_ascii=False)}
 Conversation history: {json.dumps(conversation_history or [], ensure_ascii=False)}
 """.strip()
-        raw = await self.groq.complete(
-            [{"role": "system", "content": "Return only valid JSON. Do not expose hidden reasoning."}, {"role": "user", "content": prompt}],
-            json_mode=True,
-        )
-        plan = CognitiveReasoningPlan.model_validate(json.loads(raw))
-        plan.validate_memory_references(memory_ids)
-        return plan
+        logger.info("Starting cognitive plan for %d retrieved memories", len(retrieved_memories))
+        try:
+            raw = await self.groq.complete(
+                [{"role": "system", "content": "Return only valid JSON. Do not expose hidden reasoning."}, {"role": "user", "content": prompt}],
+                json_mode=True,
+            )
+            plan = CognitiveReasoningPlan.model_validate(json.loads(raw))
+            plan.validate_memory_references(memory_ids)
+            logger.info("Cognitive plan completed should_answer=%s confidence=%.2f", plan.response_constraints.should_answer, plan.confidence)
+            return plan
+        except Exception:
+            # The caller treats planning as an optional enhancement and can
+            # still generate a grounded answer from the same evidence.
+            logger.exception("Cognitive planning failed")
+            raise

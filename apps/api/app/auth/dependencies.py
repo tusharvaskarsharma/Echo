@@ -1,8 +1,11 @@
 from typing import Annotated
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import logging
 
 from app.auth.security import verify_jwt_token
+
+logger = logging.getLogger(__name__)
 
 # Bearer token extractor
 oauth2_scheme = HTTPBearer()
@@ -14,6 +17,7 @@ def get_current_user(credentials: Annotated[HTTPAuthorizationCredentials, Depend
     """
     token = credentials.credentials
     payload = verify_jwt_token(token)
+    logger.info("Authenticated API request subject=%s", payload.get("sub"))
     return payload
 
 def require_subject(user: Annotated[dict, Depends(get_current_user)]) -> dict:

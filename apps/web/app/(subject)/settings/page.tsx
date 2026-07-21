@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, ChevronRight, Download, LoaderCircle, LogOut, Save, ShieldCheck, Trash2, UserRound } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { API_BASE } from "@/lib/api";
+import { api, API_BASE } from "@/lib/api";
 
 type ProfileForm = {
   full_name: string;
@@ -42,6 +42,9 @@ export default function SettingsPage() {
   const [notice, setNotice] = useState<Notice>(null);
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
   const [usernameMessage, setUsernameMessage] = useState("");
+  const [showMemoryEraseConfirmation, setShowMemoryEraseConfirmation] = useState(false);
+  const [memoryEraseConfirmation, setMemoryEraseConfirmation] = useState("");
+  const [isErasingMemories, setIsErasingMemories] = useState(false);
   const loadedUsername = useRef("");
 
   const setValue = <Key extends keyof ProfileForm>(key: Key, value: ProfileForm[Key]) => setForm((current) => ({ ...current, [key]: value }));
@@ -200,6 +203,23 @@ export default function SettingsPage() {
     router.replace("/login");
   };
 
+  const eraseMemories = async () => {
+    if (memoryEraseConfirmation.trim().toUpperCase() !== "DELETE MY MEMORIES") return;
+    setIsErasingMemories(true);
+    setNotice(null);
+    try {
+      const result = await api.deleteAllMemories(memoryEraseConfirmation);
+      setNotice({ type: "success", text: result.message });
+      setShowMemoryEraseConfirmation(false);
+      setMemoryEraseConfirmation("");
+      router.refresh();
+    } catch (error) {
+      setNotice({ type: "error", text: error instanceof Error ? error.message : "Memories could not be removed. Please try again." });
+    } finally {
+      setIsErasingMemories(false);
+    }
+  };
+
   const inputClass = "mt-1.5 w-full rounded-xl border border-primary/15 bg-white px-3.5 py-2.5 text-sm text-text shadow-sm outline-none transition placeholder:text-text/35 focus:border-primary/50 focus:ring-4 focus:ring-primary/10";
   const usernameInputClass = `${inputClass} ${usernameStatus === "available" ? "border-success/70 focus:border-success focus:ring-success/10" : usernameStatus === "invalid" || usernameStatus === "taken" ? "border-red-400 focus:border-red-500 focus:ring-red-100" : ""}`;
 
@@ -248,10 +268,11 @@ export default function SettingsPage() {
           <aside className="h-fit space-y-4 lg:sticky lg:top-8">
             <section className="rounded-[26px] border border-primary/10 bg-[#2f2a28] p-6 text-white shadow-lg"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/55">Signed in as</p><p className="mt-2 break-all text-sm text-white/90">{isLoading ? "Loading account..." : email}</p><div className="mt-6 border-t border-white/10 pt-5"><button type="submit" disabled={isLoading || isSaving || usernameStatus !== "available"} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">{isSaving ? <LoaderCircle className="animate-spin" size={17} /> : <Save size={17} />}{isSaving ? "Saving settings..." : "Save changes"}</button></div></section>
             {notice && <p className={`rounded-2xl border px-4 py-3 text-sm leading-5 ${notice.type === "success" ? "border-success/30 bg-green-50 text-green-800" : "border-red-200 bg-red-50 text-red-700"}`} role={notice.type === "error" ? "alert" : "status"}>{notice.type === "success" && <Check className="mr-2 inline" size={16} />}{notice.text}</p>}
-            <section className="rounded-[26px] border border-primary/10 bg-white/75 p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-text/45">Account actions</p><div className="mt-3 divide-y divide-primary/10"><button type="button" onClick={exportData} className="flex w-full items-center justify-between py-3 text-left text-sm font-medium text-text/75 hover:text-primary"><span className="flex items-center gap-2"><Download size={16} /> Export my profile data</span><ChevronRight size={16} /></button><button type="button" onClick={logout} className="flex w-full items-center justify-between py-3 text-left text-sm font-medium text-text/75 hover:text-primary"><span className="flex items-center gap-2"><LogOut size={16} /> Log out</span><ChevronRight size={16} /></button></div></section>
+            <section className="rounded-[26px] border border-primary/10 bg-white/75 p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-text/45">Account actions</p><div className="mt-3 divide-y divide-primary/10"><button type="button" onClick={exportData} className="flex w-full items-center justify-between py-3 text-left text-sm font-medium text-text/75 hover:text-primary"><span className="flex items-center gap-2"><Download size={16} /> Export my profile data</span><ChevronRight size={16} /></button><button type="button" onClick={() => setShowMemoryEraseConfirmation(true)} className="flex w-full items-center justify-between py-3 text-left text-sm font-semibold text-red-700 hover:text-red-800"><span className="flex items-center gap-2"><Trash2 size={16} /> Remove all my memories</span><ChevronRight size={16} /></button><button type="button" onClick={logout} className="flex w-full items-center justify-between py-3 text-left text-sm font-medium text-text/75 hover:text-primary"><span className="flex items-center gap-2"><LogOut size={16} /> Log out</span><ChevronRight size={16} /></button></div></section>
             <button type="button" onClick={destroy} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100"><Trash2 size={16} /> Delete account</button>
           </aside>
         </form>
+        {showMemoryEraseConfirmation && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="erase-memories-title"><div className="w-full max-w-md rounded-[26px] border border-red-200 bg-white p-6 shadow-2xl"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-red-700">Permanent action</p><h2 id="erase-memories-title" className="mt-2 font-serif text-3xl text-text">Remove all my memories?</h2><p className="mt-3 text-sm leading-6 text-text/70">This permanently removes your preserved memories, interview transcripts, private recordings, derived memory profiles, and Pinecone search vectors. Your account, profile, and family groups remain.</p><label className="mt-5 block text-sm font-semibold text-text/80">Type <span className="select-all font-mono text-red-700">DELETE MY MEMORIES</span> to confirm<input autoFocus value={memoryEraseConfirmation} onChange={(event) => setMemoryEraseConfirmation(event.target.value)} className={inputClass} placeholder="DELETE MY MEMORIES" /></label><div className="mt-6 flex justify-end gap-3"><button type="button" disabled={isErasingMemories} onClick={() => { setShowMemoryEraseConfirmation(false); setMemoryEraseConfirmation(""); }} className="rounded-xl px-4 py-2.5 text-sm font-semibold text-text/65 hover:bg-primary/5">Cancel</button><button type="button" disabled={isErasingMemories || memoryEraseConfirmation.trim().toUpperCase() !== "DELETE MY MEMORIES"} onClick={eraseMemories} className="inline-flex items-center gap-2 rounded-xl bg-red-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-45">{isErasingMemories && <LoaderCircle className="animate-spin" size={16} />} {isErasingMemories ? "Removing memories..." : "Permanently remove"}</button></div></div></div>}
       </div>
     </main>
   );

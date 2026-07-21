@@ -61,3 +61,20 @@ class SessionAudioStorageService:
             )
             response.raise_for_status()
             return response.content
+
+    async def delete(self, storage_uri: str) -> None:
+        """Permanently remove one private session recording from Storage."""
+        prefix = f"supabase://{self.bucket}/"
+        if not storage_uri.startswith(prefix):
+            raise ValueError("Unexpected session-audio storage URI")
+        path = storage_uri.removeprefix(prefix)
+        async with httpx.AsyncClient(timeout=90) as client:
+            response = await client.delete(
+                f"{self.base_url}/storage/v1/object/{self.bucket}",
+                headers={**self.headers, "Content-Type": "application/json"},
+                json={"prefixes": [path]},
+            )
+            # A recording can have already been removed manually.  That still
+            # satisfies this erasure request and keeps retrying safe.
+            if response.status_code != 404:
+                response.raise_for_status()

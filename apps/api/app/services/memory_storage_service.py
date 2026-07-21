@@ -101,3 +101,35 @@ class MemoryStorageService:
             )
             upload.raise_for_status()
         return memory
+
+    async def delete_all(self, user_id: str) -> None:
+        """Permanently remove this user's legacy fallback memory objects.
+
+        These JSON objects are only used when PostgreSQL was unavailable, but
+        they can contain the same private transcript content as canonical
+        database memories.  A memory erasure must therefore clean them too.
+        """
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                f"{self.settings.supabase_url}/storage/v1/object/list/{self.bucket}",
+                headers={**self.headers, "Content-Type": "application/json"},
+                json={"prefix": f"{user_id}/", "limit": 1000},
+            )
+            # A user may never have used the offline fallback, so its bucket
+            # need not exist.  There is nothing to erase in that case.
+            if response.status_code == 404:
+                return
+            response.raise_for_status()
+            paths = [
+                f"{user_id}/{entry['name']}"
+                for entry in response.json()
+                if isinstance(entry, dict) and entry.get("name", "").endswith(".json")
+            ]
+            if not paths:
+                return
+            deletion = await client.delete(
+                f"{self.settings.supabase_url}/storage/v1/object/{self.bucket}",
+                headers={**self.headers, "Content-Type": "application/json"},
+                json={"prefixes": paths},
+            )
+            deletion.raise_for_status()

@@ -39,3 +39,9 @@ class DraftMemoryCreate(BaseModel):
 
 class ConversationMemoryCreate(BaseModel):
     content: str = Field(min_length=1, max_length=100_000)
+
+
+class DeleteAllMemoriesRequest(BaseModel):
+    """Explicit server-side confirmation for an irreversible erasure."""
+
+    confirmation: str = Field(min_length=1, max_length=64)

@@ -6,13 +6,18 @@ import logging
 from app.auth.dependencies import require_subject
 from app.db.client import get_db, get_optional_db
 from app.db import repositories
-from app.models.memory import MemoryFragment, MemoryPatch, DraftMemoryCreate, ConversationMemoryCreate, ConsentLevel
+from app.models.memory import (
+    MemoryFragment, MemoryPatch, DraftMemoryCreate, ConversationMemoryCreate,
+    DeleteAllMemoriesRequest, ConsentLevel,
+)
 from uuid import uuid4
 from app.services.memory_storage_service import MemoryStorageService
 from app.models.session import SessionCreate, SessionStatus, SessionUpdate
 from app.services.session_service import SessionService
 from app.workers.index_memory import index_memory
 from app.workers.sync_consent import sync_memory_consent
+from app.services.pinecone_service import PineconeService
+from app.services.session_audio_storage_service import SessionAudioStorageService
 
 router = APIRouter(
     prefix='/memories', 
@@ -21,6 +26,8 @@ router = APIRouter(
 )
 
 logger = logging.getLogger(__name__)
+
+ERASE_CONFIRMATION = "DELETE MY MEMORIES"
 
 
 async def _index_memory(memory: MemoryFragment, user_id: str, conn: asyncpg.Connection | None = None) -> None:
@@ -136,6 +143,90 @@ async def list_memories(
     subject_id = user.get("sub")
     memories = await repositories.list_memories(conn, subject_id)
     return memories
+
+
+@router.delete("/all")
+async def delete_all_memories(
+    payload: DeleteAllMemoriesRequest,
+    user: Annotated[dict, Depends(require_subject)],
+    conn: Annotated[asyncpg.Connection, Depends(get_db)],
+):
+    """Irreversibly erase every memory artifact owned by the caller.
+
+    Pinecone has no transaction shared with Postgres, so vectors are erased
+    first.  This deliberately favors privacy: if the subsequent database
+    transaction fails, a retry is safe and cannot expose a vector whose source
+    record has been removed.
+    """
+    if payload.confirmation.strip().upper() != ERASE_CONFIRMATION:
+        raise HTTPException(
+            status_code=400,
+            detail=f'Type "{ERASE_CONFIRMATION}" to permanently remove your memories.',
+        )
+
+    user_id = str(user["sub"])
+    try:
+        audio_rows = await conn.fetch(
+            "SELECT audio_url FROM public.sessions WHERE user_id = $1 AND audio_url IS NOT NULL",
+            user_id,
+        )
+        counts = await conn.fetchrow(
+            """
+            SELECT
+              (SELECT count(*) FROM public.memories WHERE user_id = $1) AS memories,
+              (SELECT count(*) FROM public.memory_chunks WHERE user_id = $1) AS chunks,
+              (SELECT count(*) FROM public.sessions WHERE user_id = $1) AS sessions
+            """,
+            user_id,
+        )
+    except asyncpg.PostgresError as error:
+        logger.exception("Failed to prepare memory erasure for user %s", user_id)
+        raise HTTPException(status_code=503, detail="Memory erasure is temporarily unavailable.") from error
+
+    try:
+        PineconeService().delete_vectors(user_id, delete_all=True)
+        audio_storage = SessionAudioStorageService()
+        for row in audio_rows:
+            await audio_storage.delete(row["audio_url"])
+        await MemoryStorageService().delete_all(user_id)
+    except Exception as error:
+        # Do not remove canonical records when any external private copy could
+        # still remain.  The user can safely retry this idempotent operation.
+        logger.exception("Failed to erase external memory data for user %s", user_id)
+        raise HTTPException(
+            status_code=503,
+            detail="Memory erasure could not complete. No database memories were deleted; please try again.",
+        ) from error
+
+    try:
+        async with conn.transaction():
+            # Cognitive profiles and history are derived from private memories.
+            # Removing their root profile cascades all trait, evidence, plan,
+            # and snapshot rows without affecting account or family records.
+            await conn.execute("DELETE FROM public.conversation_history WHERE user_id = $1", user_id)
+            await conn.execute("DELETE FROM public.mind_profiles WHERE user_id = $1", user_id)
+            # Sessions cascade to memories and memory_chunks via their FKs.
+            await conn.execute("DELETE FROM public.sessions WHERE user_id = $1", user_id)
+    except asyncpg.PostgresError as error:
+        logger.exception("Pinecone was cleared but database memory erasure failed for user %s", user_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Memory vectors were removed, but database cleanup failed. Please retry the erase action.",
+        ) from error
+
+    stats = dict(counts) if counts else {"memories": 0, "chunks": 0, "sessions": 0}
+    logger.info(
+        "Erased owned memory data for user %s (memories=%s chunks=%s sessions=%s)",
+        user_id, stats.get("memories", 0), stats.get("chunks", 0), stats.get("sessions", 0),
+    )
+    return {
+        "message": "All of your preserved memories have been permanently removed.",
+        "deleted": {
+            "memories": int(stats.get("memories", 0)),
+            "chunks": int(stats.get("chunks", 0)),
+            "sessions": int(stats.get("sessions", 0)),
+        },
+    }
 
 @router.patch("/{memory_id}", response_model=MemoryFragment)
 async def update_memory_consent(
