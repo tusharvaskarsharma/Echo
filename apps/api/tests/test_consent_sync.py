@@ -14,7 +14,7 @@ class FakePool:
         yield object()
 
 
-def test_consent_worker_uses_database_owner_and_subject_namespace(monkeypatch):
+def test_consent_worker_uses_database_owner_namespace(monkeypatch):
     memory = MemoryFragment(
         id="memory-123", session_id="session-123", subject_id="subject-123",
         content="A private family memory", emotion_tags=[], topics=[], people_mentioned=[],
@@ -37,4 +37,4 @@ def test_consent_worker_uses_database_owner_and_subject_namespace(monkeypatch):
 
     asyncio.run(sync_consent._sync_memory_consent_async("memory-123", "owner-123"))
 
-    assert calls == [("subject-123", "memory-123", {"consent_level": "legacy"})]
+    assert calls == [("owner-123", "memory-123", {"consent_level": "legacy"})]

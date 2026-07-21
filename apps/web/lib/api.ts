@@ -124,6 +124,13 @@ export const api = {
     }
     return response.json();
   },
+
+  saveSessionTranscript: async (sessionId: string, transcript: string) => {
+    return request(`/sessions/${sessionId}/transcript`, {
+      method: "PUT",
+      body: JSON.stringify({ transcript }),
+    });
+  },
   
   createDraft: async (sessionId: string, data: any) => {
     return request("/memories/draft", {

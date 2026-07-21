@@ -18,6 +18,8 @@ class Session(BaseModel):
     started_at: datetime | None = None
     ended_at: datetime | None = None
     audio_url: str | None = None
+    transcript: str | None = None
+    transcript_segments: list[dict] = []
     created_at: datetime | None = None
 
 class SessionCreate(BaseModel):
@@ -28,6 +30,11 @@ class SessionCreate(BaseModel):
 
 class SessionUpdate(BaseModel):
     status: SessionStatus
+
+
+class SessionTranscriptUpdate(BaseModel):
+    """The browser's complete Echo/User conversation, before audio processing."""
+    transcript: str
 
 class PaginatedSessionResponse(BaseModel):
     items: List[Session]

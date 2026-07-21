@@ -37,12 +37,18 @@ class ChatService:
         if not profile:
             raise ValueError("Echo profile not found.")
         subject_id = str(profile["subject_id"])
+        owner_id = await self.conn.fetchval("SELECT user_id FROM subjects WHERE id = $1", subject_id)
+        if not owner_id:
+            raise ValueError("Echo profile has no owning user.")
         allowed_consent = {
             "owner": ["private", "family", "legacy"],
             "family": ["family", "legacy"],
             "legacy": ["legacy"],
         }.get(access_level, ["legacy"])
-        memories = await self.retrieval_service.retrieve_memories(text, subject_id, allowed_consent)
+        memories = await self.retrieval_service.retrieve_memories(
+            text, str(owner_id), allowed_consent, conn=self.conn,
+            min_score=0.35 if access_level == "owner" else 0.45, top_k=6,
+        )
 
         if not memories:
             async def fallback():

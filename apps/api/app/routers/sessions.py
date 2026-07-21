@@ -4,7 +4,7 @@ import asyncpg
 
 from app.auth.dependencies import require_subject
 from app.db.client import get_db
-from app.models.session import Session, SessionCreate, SessionUpdate, PaginatedSessionResponse
+from app.models.session import Session, SessionCreate, SessionUpdate, SessionTranscriptUpdate, PaginatedSessionResponse
 from app.services.session_service import SessionService
 
 # Protect all routes by requiring the subject role
@@ -71,6 +71,16 @@ async def upload_session_audio(
     if len(content) > 75 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Recording exceeds the 75 MB upload limit")
     return await service.save_audio(session_id, content, content_type)
+
+
+@router.put("/{session_id}/transcript", response_model=Session)
+async def save_session_transcript(
+    session_id: str,
+    payload: SessionTranscriptUpdate,
+    service: Annotated[SessionService, Depends(get_session_service)],
+):
+    """Save the browser's complete two-speaker transcript before processing."""
+    return await service.save_transcript(session_id, payload.transcript)
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_session(

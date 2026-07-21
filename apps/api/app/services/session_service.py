@@ -75,6 +75,21 @@ class SessionService:
             raise HTTPException(status_code=404, detail="Session not found")
         return updated
 
+    async def save_transcript(self, session_id: str, transcript: str) -> Session:
+        """Store both Echo prompts and the user's answers as canonical evidence."""
+        cleaned = transcript.strip()
+        if not cleaned:
+            raise HTTPException(status_code=400, detail="The session transcript is empty")
+        if len(cleaned) > 250_000:
+            raise HTTPException(status_code=413, detail="The session transcript exceeds the 250,000 character limit")
+        await self.get_session(session_id)
+        updated = await repositories.update_session_transcript(
+            self.conn, session_id, self.subject_id, cleaned,
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return updated
+
     async def delete_session(self, session_id: str) -> None:
         await self.get_session(session_id) # Validates ownership and existence
         success = await repositories.delete_session(self.conn, session_id, self.subject_id)

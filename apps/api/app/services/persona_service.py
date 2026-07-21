@@ -11,6 +11,7 @@ class PersonaService:
         for index, memory in enumerate(memories, start=1):
             evidence.append(
                 f"[MEMORY {index}]\n{memory.get('content', '')}\n"
+                f"[CATEGORY] {memory.get('category') or 'Stories'}\n"
                 f"[ERA] {memory.get('time_period') or 'Unknown era'}\n"
                 f"[TOPICS] {', '.join(memory.get('topics', []))}"
             )

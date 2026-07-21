@@ -23,9 +23,10 @@ def test_retrieval_enforces_owner_namespace_consent_and_threshold(monkeypatch):
     monkeypatch.setattr(retrieval_module, "EmbeddingService", FakeEmbeddings)
     monkeypatch.setattr(retrieval_module, "PineconeService", FakePinecone)
 
-    result = asyncio.run(RetrievalService().retrieve_memories("What mattered?", "subject-1", ["family", "legacy"]))
+    result = asyncio.run(RetrievalService().retrieve_memories("What mattered?", "owner-1", ["family", "legacy"], min_score=0.8))
 
-    assert result == [{"memory_id": "allowed", "content": "A consented memory"}]
-    assert captured["namespace"] == "subject-1"
-    assert captured["top_k"] == 12
+    assert [memory["memory_id"] for memory in result] == ["allowed"]
+    assert captured["namespace"] == "owner-1"
+    assert captured["top_k"] == 24
+    assert captured["filter"]["owner_id"] == {"$eq": "owner-1"}
     assert captured["filter"]["consent_level"] == {"$in": ["family", "legacy"]}

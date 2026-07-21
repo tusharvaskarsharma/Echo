@@ -23,8 +23,8 @@ router = APIRouter(
 logger = logging.getLogger(__name__)
 
 
-async def _index_memory(memory: MemoryFragment, user_id: str) -> None:
-    await index_memory(memory.model_dump(mode="json"), user_id)
+async def _index_memory(memory: MemoryFragment, user_id: str, conn: asyncpg.Connection | None = None) -> None:
+    await index_memory(memory.model_dump(mode="json"), user_id, conn=conn)
 
 
 async def _import_fallback_memories(
@@ -66,7 +66,7 @@ async def _import_fallback_memories(
                 update={"session_id": session.id, "subject_id": user_id}
             )
             saved = await repositories.create_memory(conn, imported, user_id)
-            await _index_memory(saved, user_id)
+            await _index_memory(saved, user_id, conn)
             logger.info("Imported fallback memory %s for user %s", saved.id, user_id)
         except Exception:
             # Continue with other records; re-running the list endpoint safely
@@ -88,13 +88,16 @@ async def save_conversation_memory(
 
     service = SessionService(conn, user_id, user.get("email"))
     session = await service.create_session(SessionCreate())
+    # Keep the canonical session transcript as well as the immediately
+    # available memory record for clients that use this compatibility route.
+    await service.save_transcript(str(session.id), conversation.content)
     memory = MemoryFragment(
         id=uuid4(), session_id=session.id, subject_id=session.subject_id,
         content=conversation.content, emotion_tags=["reflection"], topics=["voice-session"],
         people_mentioned=[], consent_level=ConsentLevel.PRIVATE, confidence_score=0.7,
     )
     saved = await repositories.create_memory(conn, memory, user_id)
-    await _index_memory(saved, user_id)
+    await _index_memory(saved, user_id, conn)
     await service.update_session(str(session.id), SessionUpdate(status=SessionStatus.COMPLETED))
     return saved
 
@@ -114,7 +117,7 @@ async def create_draft_memory(
         confidence_score=0.7,
     )
     saved = await repositories.create_memory(conn, memory, user["sub"])
-    await _index_memory(saved, str(user["sub"]))
+    await _index_memory(saved, str(user["sub"]), conn)
     return saved
 
 @router.get("", response_model=List[MemoryFragment])

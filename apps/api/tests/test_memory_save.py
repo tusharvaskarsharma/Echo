@@ -16,6 +16,9 @@ def test_conversation_save_indexes_memory_before_returning(monkeypatch):
         async def create_session(self, _request):
             return SimpleNamespace(id=uuid4(), subject_id=user_id)
 
+        async def save_transcript(self, _session_id, transcript):
+            assert transcript == "A conversation worth keeping."
+
         async def update_session(self, _session_id, _update):
             return None
 
@@ -24,7 +27,7 @@ def test_conversation_save_indexes_memory_before_returning(monkeypatch):
 
     indexed = []
 
-    async def index_memory(payload, owner_id):
+    async def index_memory(payload, owner_id, **_kwargs):
         indexed.append((payload, owner_id))
 
     monkeypatch.setattr(memory_router, "SessionService", FakeSessionService)

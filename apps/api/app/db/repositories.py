@@ -9,6 +9,20 @@ from app.models import (
 )
 from app.models.finetune import FinetuneJob
 
+
+def _session_from_row(row) -> Session:
+    """Normalise JSONB codecs before constructing the public session model."""
+    payload = dict(row)
+    segments = payload.get("transcript_segments")
+    if isinstance(segments, str):
+        try:
+            payload["transcript_segments"] = json.loads(segments)
+        except json.JSONDecodeError:
+            payload["transcript_segments"] = []
+    elif segments is None:
+        payload["transcript_segments"] = []
+    return Session(**payload)
+
 async def create_subject(conn: asyncpg.Connection, subject: Subject) -> Subject:
     query = """
     INSERT INTO subjects (id, full_name, email, date_of_birth)
@@ -34,7 +48,7 @@ async def create_session(conn: asyncpg.Connection, session: Session, user_id: UU
     row = await conn.fetchrow(
         query, session.id, session.subject_id, user_id, session.status, session.started_at, session.ended_at
     )
-    return Session(**dict(row))
+    return _session_from_row(row)
 
 async def get_session(conn: asyncpg.Connection, session_id: UUID | str, user_id: UUID | str | None = None) -> Optional[Session]:
     """Fetch an owned session; worker code may omit ownership after a trusted job is queued."""
@@ -42,7 +56,7 @@ async def get_session(conn: asyncpg.Connection, session_id: UUID | str, user_id:
         row = await conn.fetchrow("SELECT * FROM sessions WHERE id = $1", session_id)
     else:
         row = await conn.fetchrow("SELECT * FROM sessions WHERE id = $1 AND user_id = $2", session_id, user_id)
-    return Session(**dict(row)) if row else None
+    return _session_from_row(row) if row else None
 
 async def list_sessions(conn: asyncpg.Connection, user_id: UUID | str, limit: int = 10, offset: int = 0) -> tuple[list[Session], int]:
     total = await conn.fetchval("SELECT COUNT(*) FROM sessions WHERE user_id = $1", user_id)
@@ -53,7 +67,7 @@ async def list_sessions(conn: asyncpg.Connection, user_id: UUID | str, limit: in
     LIMIT $2 OFFSET $3
     """
     rows = await conn.fetch(query, user_id, limit, offset)
-    items = [Session(**dict(row)) for row in rows]
+    items = [_session_from_row(row) for row in rows]
     return items, total
 
 async def update_session(conn: asyncpg.Connection, session: Session, user_id: UUID | str) -> Session:
@@ -63,7 +77,7 @@ async def update_session(conn: asyncpg.Connection, session: Session, user_id: UU
     RETURNING *
     """
     row = await conn.fetchrow(query, session.status, session.ended_at, session.id, user_id)
-    return Session(**dict(row)) if row else session
+    return _session_from_row(row) if row else session
 
 
 async def update_session_audio_url(conn: asyncpg.Connection, session_id: UUID | str, user_id: UUID | str, audio_url: str) -> Session | None:
@@ -71,7 +85,26 @@ async def update_session_audio_url(conn: asyncpg.Connection, session_id: UUID | 
         "UPDATE sessions SET audio_url = $1 WHERE id = $2 AND user_id = $3 RETURNING *",
         audio_url, session_id, user_id,
     )
-    return Session(**dict(row)) if row else None
+    return _session_from_row(row) if row else None
+
+
+async def update_session_transcript(
+    conn: asyncpg.Connection,
+    session_id: UUID | str,
+    user_id: UUID | str,
+    transcript: str,
+) -> Session | None:
+    """Persist the actual two-speaker transcript before a session is completed."""
+    row = await conn.fetchrow(
+        """UPDATE sessions
+           SET transcript = $1
+           WHERE id = $2 AND user_id = $3
+           RETURNING *""",
+        transcript,
+        session_id,
+        user_id,
+    )
+    return _session_from_row(row) if row else None
 
 async def delete_session(conn: asyncpg.Connection, session_id: UUID | str, user_id: UUID | str) -> bool:
     result = await conn.execute("DELETE FROM sessions WHERE id = $1 AND user_id = $2", session_id, user_id)

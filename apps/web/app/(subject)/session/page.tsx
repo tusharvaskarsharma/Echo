@@ -59,8 +59,12 @@ export default function SessionPage() {
     setSaveError(null);
     try {
       const recording = await finishRecording();
-      if (sessionId && recording?.size) {
-        await api.uploadSessionAudio(sessionId, recording);
+      if (sessionId) {
+        // The recording contains only the microphone.  Save this browser-side
+        // Echo/User transcript first so every question stays paired with its
+        // answer in the indexed evidence.
+        await api.saveSessionTranscript(sessionId, content);
+        if (recording?.size) await api.uploadSessionAudio(sessionId, recording);
         await api.finishSession(sessionId);
       } else {
         // Text-only and local no-Postgres sessions still persist as a private
